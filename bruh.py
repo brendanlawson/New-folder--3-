@@ -14,7 +14,7 @@ def generate_financial_plan_csv(filename="Bang_Tinh_Dong_Tien.csv"):
                500000, 600000, 500000, 700000, 600000, 700000]
 
     header = [
-        "Tuần", "Thu nhập", "Tiền xăng", 
+        "Tuần ", "Thu nhập", "Tiền xăng", 
         "Trích quỹ nợ", "Rút quỹ dự phòng", 
         "Tiền ăn", "Thanh toán", 
         "Quỹ dự phòng", "Quỹ nợ"

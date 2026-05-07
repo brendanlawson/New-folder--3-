@@ -56,9 +56,15 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
 .ab-c{color:var(--muted)}.ab-c:hover{background:rgba(123,140,168,.15)}
 .ei{width:70px;background:var(--bg);border:1px solid var(--accent);border-radius:6px;color:#fff;text-align:right;font-size:12px;font-family:inherit;padding:3px 5px;outline:none}
 .ei:focus{box-shadow:0 0 0 2px var(--glow)}
-.dict-toggle{cursor:pointer;user-select:none;display:flex;justify-content:space-between}
-.dict-body{overflow:hidden;max-height:0;transition:max-height .3s ease}
-.dict-body.open{max-height:300px}
+.dict-toggle,.hist-toggle{cursor:pointer;user-select:none;display:flex;justify-content:space-between}
+.dict-body,.hist-body{overflow:hidden;max-height:0;transition:max-height .3s ease}
+.dict-body.open,.hist-body.open{max-height:400px}
+.hist-body{overflow-y:auto}
+.log-item{padding:6px 0;border-bottom:1px solid var(--bdr);font-size:11px;line-height:1.5}
+.log-item .log-time{color:var(--muted);font-size:10px}
+.log-item .log-field{color:var(--accent)}
+.log-item .log-old{color:var(--err);text-decoration:line-through}
+.log-item .log-new{color:var(--ok)}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:0}::-webkit-scrollbar-thumb{background:rgba(99,130,180,.2);border-radius:3px}
 @keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .pnl,.card,.cbox,.tbox{animation:fi .4s ease-out}
@@ -82,10 +88,11 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
     <div class="fg"><label class="fl" data-i="t3">Số tiền vay</label><input type="number" id="s_principal" class="fc" value="3168048" required></div>
     <div class="fg"><label class="fl" data-i="t4">Kỳ hạn</label>
      <select id="s_term" class="fc" style="appearance:auto"><option value="3">3 tháng (12 tuần)</option><option value="6">6 tháng (24 tuần)</option><option value="9">9 tháng (36 tuần)</option><option value="12">12 tháng (48 tuần)</option></select></div>
-    <div class="fg"><label class="fl" data-i="t5">Lãi suất tháng (%)</label><input type="number" id="s_rate" class="fc" value="0" step="0.1" required></div>
+    <div class="fg"><label class="fl" data-i="t5">Lãi suất tháng (%)</label><input type="number" id="s_rate" class="fc" value="3.67" step="0.01" required></div>
     <div class="fg"><label class="fl" data-i="t6">Thu nhập TB / tuần</label><input type="number" id="s_income" class="fc" value="600000" required></div>
     <div class="fg"><label class="fl" data-i="t7">Chi phí cố định / tuần</label><input type="number" id="s_cost" class="fc" value="50000" required></div>
     <div class="fg"><label class="fl" data-i="t8">Quỹ dự phòng ban đầu</label><input type="number" id="s_reserve" class="fc" value="471001" required></div>
+    <div class="fg"><label class="fl" data-i="t12">Ngày bắt đầu</label><input type="date" id="s_date" class="fc" required></div>
     <button type="submit" class="btn" id="genBtn" data-i="t9">Tạo Lộ Trình</button>
    </form>
    <div style="margin-top:8px"><button class="btn btn-warn" onclick="importCSV()" style="font-size:10px" data-i="t10">Nhập từ CSV gốc</button></div>
@@ -102,6 +109,10 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
     <p><strong class="c-gld" data-i="d4">Quỹ Dự Phòng:</strong><br><span style="color:var(--muted)" data-i="d4d">Khiên bảo vệ tài chính.</span></p>
    </div>
   </div>
+  <div class="pnl">
+   <div class="pnl-h hist-toggle" onclick="this.nextElementSibling.classList.toggle('open')"><span data-i="t13">Lịch Sử Thay Đổi</span><span>▼</span></div>
+   <div class="hist-body" id="histBody"></div>
+  </div>
  </div>
  <div class="main">
   <div class="cards" id="cards">
@@ -113,7 +124,7 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
   <div class="cbox" id="cBox"><button class="exp" onclick="tFS('cBox')">⛶</button><canvas id="chart"></canvas></div>
   <div class="tbox" id="tBox"><button class="exp" onclick="tFS('tBox')">⛶</button>
    <table><thead><tr>
-    <th data-i="h0">Kỳ</th><th data-i="h1">Thu Nhập</th><th data-i="h2">Cố Định</th><th data-i="h3">Trích Nợ</th>
+    <th data-i="h0">Kỳ</th><th data-i="ha">Ngày</th><th data-i="h1">Thu Nhập</th><th data-i="h2">Cố Định</th><th data-i="h3">Trích Nợ</th>
     <th data-i="h4">Rút D.Phòng</th><th data-i="h5">Tiền Sống</th><th data-i="h6">Thanh Toán</th>
     <th data-i="h7">Q.Dự Phòng</th><th data-i="h8">Quỹ Nợ</th><th data-i="h9">Hành Động</th>
    </tr></thead><tbody id="tb"></tbody></table>
@@ -127,15 +138,15 @@ document.getElementById('uName').textContent=U;
 function logout(){localStorage.clear();location.href='/';}
 
 // i18n
-const L={vi:{t0:'Quản Lý Dòng Tiền',t1:'Đăng Xuất',t2:'Thiết Lập Khoản Vay',t3:'Số tiền vay',t4:'Kỳ hạn',t5:'Lãi suất tháng (%)',t6:'Thu nhập TB / tuần',t7:'Chi phí cố định / tuần',t8:'Quỹ dự phòng ban đầu',t9:'Tạo Lộ Trình',t10:'Nhập từ CSV gốc',t11:'Từ Điển Dòng Tiền',
+const L={vi:{t0:'Quản Lý Dòng Tiền',t1:'Đăng Xuất',t2:'Thiết Lập Khoản Vay',t3:'Số tiền vay',t4:'Kỳ hạn',t5:'Lãi suất tháng (%)',t6:'Thu nhập TB / tuần',t7:'Chi phí cố định / tuần',t8:'Quỹ dự phòng ban đầu',t9:'Tạo Lộ Trình',t10:'Nhập từ CSV gốc',t11:'Từ Điển Dòng Tiền',t12:'Ngày bắt đầu',t13:'Lịch Sử Thay Đổi',
 d1:'Thu nhập:',d1d:'Nguồn thu chính (TP Bank).',d2:'Tiền Sống:',d2d:'Tiền có sẵn để tiêu (MB Bank).',d3:'Trích Nợ & Xăng:',d3d:'Chi phí bắt buộc.',d4:'Quỹ Dự Phòng:',d4d:'Khiên bảo vệ tài chính.',
 c1:'TB Thu Nhập',c2:'TB Tiền Sống',c3:'Dự Phòng Hiện Tại',c4:'Nợ Còn Lại',
-h0:'Kỳ',h1:'Thu Nhập',h2:'Cố Định',h3:'Trích Nợ',h4:'Rút D.Phòng',h5:'Tiền Sống',h6:'Thanh Toán',h7:'Q.Dự Phòng',h8:'Quỹ Nợ',h9:'Hành Động',
+h0:'Kỳ',ha:'Ngày',h1:'Thu Nhập',h2:'Cố Định',h3:'Trích Nợ',h4:'Rút D.Phòng',h5:'Tiền Sống',h6:'Thanh Toán',h7:'Q.Dự Phòng',h8:'Quỹ Nợ',h9:'Hành Động',
 be:'SỬA',bd:'XÓA'},
-en:{t0:'Cashflow Intelligence',t1:'Log Off',t2:'Loan Setup',t3:'Principal',t4:'Term',t5:'Monthly Rate (%)',t6:'Avg Weekly Income',t7:'Fixed Cost / Week',t8:'Initial Reserve',t9:'Generate Plan',t10:'Import from CSV',t11:'Cashflow Dictionary',
+en:{t0:'Cashflow Intelligence',t1:'Log Off',t2:'Loan Setup',t3:'Principal',t4:'Term',t5:'Monthly Rate (%)',t6:'Avg Weekly Income',t7:'Fixed Cost / Week',t8:'Initial Reserve',t9:'Generate Plan',t10:'Import from CSV',t11:'Cashflow Dictionary',t12:'Start Date',t13:'Change History',
 d1:'Income:',d1d:'Primary inflow (TP Bank).',d2:'Spending:',d2d:'Liquid cash (MB Bank).',d3:'Debt & Fixed:',d3d:'Mandatory outflows.',d4:'Reserve:',d4d:'Financial safety shield.',
 c1:'Avg Income',c2:'Avg Spending',c3:'Current Reserve',c4:'Remaining Debt',
-h0:'Period',h1:'Income',h2:'Fixed Cost',h3:'Debt Ded.',h4:'Res. Withd.',h5:'Spending',h6:'Payment',h7:'Reserve',h8:'Debt Bal',h9:'Action',
+h0:'Period',ha:'Date',h1:'Income',h2:'Fixed Cost',h3:'Debt Ded.',h4:'Res. Withd.',h5:'Spending',h6:'Payment',h7:'Reserve',h8:'Debt Bal',h9:'Action',
 be:'EDIT',bd:'VOID'}};
 let lang='vi';
 function setLang(l){lang=l;document.querySelectorAll('[data-i]').forEach(e=>{const k=e.getAttribute('data-i');if(L[l][k])e.textContent=L[l][k];});rTbl();}
@@ -152,7 +163,7 @@ function tFS(id){const e=document.getElementById(id);if(!document.fullscreenElem
 let D=[],chart=null,editId=null;
 const H={Authorization:'Bearer '+T,'Content-Type':'application/json'};
 
-async function load(){try{const r=await fetch('/api/cashflows',{headers:H});if(r.status===401)return logout();D=await r.json();rCards();rTbl();rChart();}catch(e){console.error(e);}}
+async function load(){try{const r=await fetch('/api/cashflows',{headers:H});if(r.status===401)return logout();D=await r.json();rCards();rTbl();rChart();loadHist();}catch(e){console.error(e);}}
 
 function rCards(){if(!D.length)return;const last=D[D.length-1],wd=D.filter(d=>d.week_name!=='Số dư ban đầu');
 const ai=wd.length?wd.reduce((s,r)=>s+r.income,0)/wd.length:0;
@@ -162,8 +173,9 @@ document.getElementById('sR').textContent=fmt(last.reserve_balance);document.get
 
 function rTbl(){const tb=document.getElementById('tb');tb.innerHTML='';
 const be=L[lang].be,bd=L[lang].bd;
+const fmtD=d=>d?new Date(d).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
 D.forEach(r=>{const tr=document.createElement('tr');const init=r.week_name==='Số dư ban đầu';
-if(editId===r.id){tr.innerHTML=`<td style="color:#fff">${r.week_name}</td>
+if(editId===r.id){tr.innerHTML=`<td style="color:#fff">${r.week_name}</td><td style="color:var(--muted)">${fmtD(r.week_date)}</td>
 <td><input type="number" id="ei_${r.id}" class="ei" value="${r.income}"></td>
 <td><input type="number" id="eg_${r.id}" class="ei" value="${r.gas}"></td>
 <td><input type="number" id="ed_${r.id}" class="ei" value="${r.debt_deduction}"></td>
@@ -172,7 +184,7 @@ if(editId===r.id){tr.innerHTML=`<td style="color:#fff">${r.week_name}</td>
 <td><input type="number" id="ep_${r.id}" class="ei" value="${r.payment}"></td>
 <td class="c-gld" style="font-weight:600">—</td><td class="c-err" style="font-weight:600">—</td>
 <td><button class="ab ab-s" onclick="saveE(${r.id})">✓</button><button class="ab ab-c" onclick="cancelE()">✕</button></td>`;}
-else{tr.innerHTML=`<td style="color:#fff">${r.week_name}</td>
+else{tr.innerHTML=`<td style="color:#fff">${r.week_name}</td><td style="color:var(--muted)">${fmtD(r.week_date)}</td>
 <td class="c-tp">${fmt(r.income)}</td><td class="c-err">${fmt(r.gas)}</td>
 <td class="c-err">${fmt(r.debt_deduction)}</td><td class="c-gld">${fmt(r.reserve_withdrawal)}</td>
 <td class="c-mb" style="font-weight:600">${fmt(r.spending)}</td><td class="c-sp">${fmt(r.payment)}</td>
@@ -194,7 +206,8 @@ const b=document.getElementById('genBtn');b.textContent='...';b.disabled=true;
 await fetch('/api/generate_plan',{method:'POST',headers:H,body:JSON.stringify({
 principal:+document.getElementById('s_principal').value,term:+document.getElementById('s_term').value,
 interest_rate:+document.getElementById('s_rate').value,weekly_income:+document.getElementById('s_income').value,
-fixed_cost:+document.getElementById('s_cost').value,init_reserve:+document.getElementById('s_reserve').value})});
+fixed_cost:+document.getElementById('s_cost').value,init_reserve:+document.getElementById('s_reserve').value,
+start_date:document.getElementById('s_date').value})});
 b.textContent=L[lang].t9;b.disabled=false;load();});
 
 async function importCSV(){if(!confirm('Nhập dữ liệu từ file CSV gốc? Dữ liệu hiện tại sẽ bị xóa.'))return;
@@ -202,7 +215,7 @@ await fetch('/api/import_csv',{method:'POST',headers:H});load();}
 
 // Chart
 function rChart(){if(!D.length)return;const ctx=document.getElementById('chart').getContext('2d');
-const cd=D.filter(d=>d.week_name!=='Số dư ban đầu'),lb=cd.map(d=>d.week_name);
+const cd=D.filter(d=>d.week_name!=='Số dư ban đầu'),lb=cd.map(d=>{const dt=d.week_date?new Date(d.week_date).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}):'';return d.week_name+(dt?' ('+dt+')':'');});
 if(chart)chart.destroy();Chart.defaults.color='#7b8ca8';Chart.defaults.font.family='Inter';
 chart=new Chart(ctx,{type:'bar',data:{labels:lb,datasets:[
 {label:L[lang].h5,data:cd.map(d=>d.spending*xr),backgroundColor:'rgba(59,130,246,.6)',borderColor:'#3b82f6',borderWidth:1,borderRadius:3,order:3},
@@ -214,6 +227,14 @@ plugins:{legend:{labels:{boxWidth:8,font:{size:11},usePointStyle:true,pointStyle
 tooltip:{backgroundColor:'rgba(10,14,26,.95)',borderColor:'rgba(99,130,180,.2)',borderWidth:1,cornerRadius:8,callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw/xr)}}},
 scales:{x:{grid:{color:'rgba(99,130,180,.06)'}},y:{position:'left',grid:{color:'rgba(99,130,180,.06)'}},y1:{position:'right',grid:{drawOnChartArea:false}}}}});}
 
+// History
+async function loadHist(){try{const r=await fetch('/api/history',{headers:H});const data=await r.json();const hb=document.getElementById('histBody');hb.innerHTML='';if(!data.length){hb.innerHTML='<p style="color:var(--muted);font-size:11px;padding:8px 0">Chưa có thay đổi nào.</p>';return;}
+data.forEach(h=>{const d=document.createElement('div');d.className='log-item';
+d.innerHTML=`<span class="log-time">${h.changed_at}</span> — <strong>${h.week_name}</strong><br><span class="log-field">${h.field}</span>: <span class="log-old">${fmt(h.old_value)}</span> → <span class="log-new">${fmt(h.new_value)}</span>`;
+hb.appendChild(d);});}catch(e){console.error(e);}}
+
+// Init: set default date to today
+document.getElementById('s_date').value=new Date().toISOString().split('T')[0];
 setLang('vi');load();
 </script>
 </body>

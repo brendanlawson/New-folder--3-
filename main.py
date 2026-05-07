@@ -2,6 +2,7 @@ import sqlite3
 from flask import Flask, request, jsonify, send_from_directory
 import hashlib, secrets, os, csv
 from functools import wraps
+from datetime import datetime, timedelta
 
 # --- DATABASE ---
 DB_PATH = "database.db"
@@ -19,11 +20,16 @@ def init_db():
         password_hash TEXT NOT NULL, token TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS cashflows (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
-        week_name TEXT, income REAL DEFAULT 0, gas REAL DEFAULT 0,
+        week_name TEXT, week_date TEXT,
+        income REAL DEFAULT 0, gas REAL DEFAULT 0,
         debt_deduction REAL DEFAULT 0, reserve_withdrawal REAL DEFAULT 0,
         spending REAL DEFAULT 0, payment REAL DEFAULT 0,
         reserve_balance REAL DEFAULT 0, debt_balance REAL DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users(id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        cashflow_id INTEGER, week_name TEXT, field TEXT, old_value REAL, new_value REAL,
+        changed_at TEXT, FOREIGN KEY (user_id) REFERENCES users(id))""")
     conn.commit()
     conn.close()
 
@@ -121,6 +127,15 @@ def update_cashflow(current_user, rid):
     if rec['week_name'] == 'Số dư ban đầu':
         conn.close()
         return jsonify({"detail": "Cannot edit initial balance"}), 400
+    # Log changes to audit_log
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    fields = ['income', 'gas', 'debt_deduction', 'reserve_withdrawal', 'payment']
+    for f in fields:
+        old_val = float(rec[f])
+        new_val = float(data.get(f, old_val))
+        if old_val != new_val:
+            c.execute("INSERT INTO audit_log (user_id, cashflow_id, week_name, field, old_value, new_value, changed_at) VALUES (?,?,?,?,?,?,?)",
+                      (current_user['id'], rid, rec['week_name'], f, old_val, new_val, now))
     c.execute("""UPDATE cashflows SET income=?, gas=?, debt_deduction=?, reserve_withdrawal=?, payment=? WHERE id=?""",
               (float(data.get('income', rec['income'])), float(data.get('gas', rec['gas'])),
                float(data.get('debt_deduction', rec['debt_deduction'])),
@@ -156,15 +171,17 @@ def generate_plan(current_user):
     data = request.json
     principal = float(data.get('principal', 3168048))
     term = int(data.get('term', 3))
-    rate = float(data.get('interest_rate', 0))
+    rate = float(data.get('interest_rate', 3.67))
     weekly_income = float(data.get('weekly_income', 600000))
     fixed_cost = float(data.get('fixed_cost', 50000))
     init_reserve = float(data.get('init_reserve', 471001))
+    start_date_str = data.get('start_date', datetime.now().strftime('%Y-%m-%d'))
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
 
     conn = get_db()
     c = conn.cursor()
-    # Wipe old data
     c.execute("DELETE FROM cashflows WHERE user_id = ?", (current_user['id'],))
+    c.execute("DELETE FROM audit_log WHERE user_id = ?", (current_user['id'],))
 
     # Monthly payment (EMI or flat)
     if rate > 0:
@@ -177,16 +194,19 @@ def generate_plan(current_user):
     total_weeks = term * 4
 
     # Initial balance row
-    c.execute("""INSERT INTO cashflows (user_id, week_name, income, gas, debt_deduction, reserve_withdrawal, spending, payment, reserve_balance, debt_balance)
-        VALUES (?,?,?,?,?,?,?,?,?,?)""", (current_user['id'], 'Số dư ban đầu', 0,0,0,0,0,0, init_reserve, 0))
+    init_date = (start_date - timedelta(days=1)).strftime('%Y-%m-%d')
+    c.execute("""INSERT INTO cashflows (user_id, week_name, week_date, income, gas, debt_deduction, reserve_withdrawal, spending, payment, reserve_balance, debt_balance)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (current_user['id'], 'Số dư ban đầu', init_date, 0,0,0,0,0,0, init_reserve, 0))
 
     prev_res = init_reserve
     prev_debt = 0.0
 
     for w in range(1, total_weeks + 1):
+        week_dt = start_date + timedelta(weeks=w-1)
+        week_date_str = week_dt.strftime('%Y-%m-%d')
         is_pay_week = (w % 4 == 0)
         payment = monthly_pay if is_pay_week else 0
-        # Auto reserve withdrawal if spending would go negative
+
         spending_raw = weekly_income - fixed_cost - weekly_ded
         res_withdrawal = 0
         if spending_raw < 0 and prev_res > 0:
@@ -196,9 +216,9 @@ def generate_plan(current_user):
         new_res = prev_res - res_withdrawal
         new_debt = prev_debt + weekly_ded - payment
 
-        c.execute("""INSERT INTO cashflows (user_id, week_name, income, gas, debt_deduction, reserve_withdrawal, spending, payment, reserve_balance, debt_balance)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (current_user['id'], f'Tuần {w}', weekly_income, fixed_cost, weekly_ded, res_withdrawal, spending, payment, new_res, new_debt))
+        c.execute("""INSERT INTO cashflows (user_id, week_name, week_date, income, gas, debt_deduction, reserve_withdrawal, spending, payment, reserve_balance, debt_balance)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (current_user['id'], f'Tuần {w}', week_date_str, weekly_income, fixed_cost, weekly_ded, res_withdrawal, spending, payment, new_res, new_debt))
         prev_res = new_res
         prev_debt = new_debt
 
@@ -233,6 +253,15 @@ def import_csv(current_user):
     conn.commit()
     conn.close()
     return jsonify({"message": "CSV imported"})
+
+# --- HISTORY ---
+@app.route('/api/history', methods=['GET'])
+@require_auth
+def get_history(current_user):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 50", (current_user['id'],)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
 
 # --- ROUTES ---
 @app.route('/')
