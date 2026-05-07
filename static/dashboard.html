@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Cashflow Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{--bg:#0a0e1a;--card:rgba(15,23,42,.85);--inp:rgba(10,14,26,.7);--bdr:rgba(99,130,180,.15);--bdr2:rgba(99,130,180,.35);--txt:#e8ecf4;--muted:#7b8ca8;--accent:#3b82f6;--glow:rgba(59,130,246,.25);--err:#ef4444;--ok:#10b981;--warn:#f59e0b;--gold:#d4a853;--grad:linear-gradient(135deg,#3b82f6,#8b5cf6)}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif}
+body{background:var(--bg);color:var(--txt);font-size:13px;overflow:hidden;height:100vh}
+.nav{background:rgba(15,23,42,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--bdr);padding:0 24px;height:52px;display:flex;justify-content:space-between;align-items:center}
+.nav-brand{font-size:15px;font-weight:500;display:flex;align-items:center;gap:10px}
+.nav-brand .ico{width:30px;height:30px;background:var(--grad);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;box-shadow:0 2px 10px var(--glow)}
+.nav-brand strong{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.nav-r{display:flex;align-items:center;gap:10px}
+.sel{background:var(--inp);color:var(--txt);border:1px solid var(--bdr);border-radius:6px;padding:5px 8px;font-size:11px;font-family:inherit;outline:none;cursor:pointer}
+.btn-out{background:0;color:var(--muted);border:1px solid var(--bdr);border-radius:6px;padding:5px 14px;cursor:pointer;font-size:11px;font-family:inherit;transition:.2s}
+.btn-out:hover{color:#fff;border-color:var(--accent)}
+.wrap{padding:16px;display:grid;grid-template-columns:280px 1fr;gap:16px;height:calc(100vh - 52px)}
+.sidebar{display:flex;flex-direction:column;gap:14px;overflow-y:auto;padding-right:4px}
+.pnl{background:var(--card);border:1px solid var(--bdr);border-radius:12px;padding:18px;transition:border-color .2s}
+.pnl:hover{border-color:var(--bdr2)}
+.pnl-h{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:600;letter-spacing:.8px;border-bottom:1px solid var(--bdr);padding-bottom:10px;margin-bottom:14px}
+.fg{margin-bottom:12px}
+.fl{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:500}
+.fc{width:100%;background:var(--inp);border:1px solid var(--bdr);border-radius:8px;color:var(--txt);padding:8px 10px;font-size:12px;font-family:inherit;outline:none;transition:.2s}
+.fc:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--glow)}
+.btn{width:100%;background:var(--grad);color:#fff;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:600;font-family:inherit;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;transition:.2s;margin-top:8px}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--glow)}
+.btn-warn{background:var(--err)}
+.main{display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{background:var(--card);border:1px solid var(--bdr);border-radius:10px;padding:14px 16px;transition:.25s;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad);opacity:0;transition:.25s}
+.card:hover{border-color:var(--bdr2);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.card:hover::before{opacity:1}
+.card .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+.card .val{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.cbox{background:var(--card);border:1px solid var(--bdr);border-radius:12px;padding:16px;height:260px;position:relative}
+.tbox{background:var(--card);border:1px solid var(--bdr);border-radius:12px;flex-grow:1;overflow:auto;position:relative}
+.cbox:fullscreen,.tbox:fullscreen{height:100vh;width:100vw;padding:30px;border-radius:0;background:var(--bg)}
+.exp{position:absolute;top:10px;right:10px;background:rgba(59,130,246,.1);border:1px solid var(--bdr);border-radius:6px;color:var(--muted);padding:3px 7px;cursor:pointer;font-size:10px;font-family:inherit;z-index:20;transition:.2s}
+.exp:hover{color:#fff;border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:850px}
+th{background:rgba(10,14,26,.8);color:var(--muted);text-align:right;padding:10px 14px;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:10}
+th:first-child,td:first-child{text-align:left}
+th:last-child,td:last-child{text-align:center}
+td{padding:10px 14px;text-align:right;border-bottom:1px solid rgba(99,130,180,.08);font-variant-numeric:tabular-nums;transition:background .15s}
+tbody tr:hover{background:rgba(59,130,246,.06)}
+.c-tp{color:var(--ok)}.c-mb{color:var(--accent)}.c-sp{color:var(--warn)}.c-err{color:var(--err)}.c-gld{color:var(--gold)}
+.ab{background:0;border:1px solid transparent;cursor:pointer;font-size:11px;font-family:inherit;padding:2px 7px;border-radius:4px;transition:.15s}
+.ab-e{color:var(--warn)}.ab-e:hover{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.3)}
+.ab-d{color:var(--err)}.ab-d:hover{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.3)}
+.ab-s{color:var(--ok)}.ab-s:hover{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.3)}
+.ab-c{color:var(--muted)}.ab-c:hover{background:rgba(123,140,168,.15)}
+.ei{width:70px;background:var(--bg);border:1px solid var(--accent);border-radius:6px;color:#fff;text-align:right;font-size:12px;font-family:inherit;padding:3px 5px;outline:none}
+.ei:focus{box-shadow:0 0 0 2px var(--glow)}
+.dict-toggle{cursor:pointer;user-select:none;display:flex;justify-content:space-between}
+.dict-body{overflow:hidden;max-height:0;transition:max-height .3s ease}
+.dict-body.open{max-height:300px}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:0}::-webkit-scrollbar-thumb{background:rgba(99,130,180,.2);border-radius:3px}
+@keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.pnl,.card,.cbox,.tbox{animation:fi .4s ease-out}
+</style>
+</head>
+<body>
+<div class="nav">
+ <div class="nav-brand"><div class="ico">₫</div><span><strong>Cashflow</strong> <span data-i="t0">Quản Lý Dòng Tiền</span></span></div>
+ <div class="nav-r">
+  <select class="sel" onchange="setLang(this.value)"><option value="vi">🇻🇳 Tiếng Việt</option><option value="en">🇺🇸 English</option></select>
+  <select class="sel" id="curSel" onchange="setCur(this.value)"><option value="VND">₫ VND</option><option value="USD">$ USD</option><option value="EUR">€ EUR</option></select>
+  <span id="uName" style="color:var(--muted);font-size:11px"></span>
+  <button class="btn-out" onclick="logout()" data-i="t1">Đăng Xuất</button>
+ </div>
+</div>
+<div class="wrap">
+ <div class="sidebar">
+  <div class="pnl">
+   <div class="pnl-h" data-i="t2">Thiết Lập Khoản Vay</div>
+   <form id="setupForm">
+    <div class="fg"><label class="fl" data-i="t3">Số tiền vay</label><input type="number" id="s_principal" class="fc" value="3168048" required></div>
+    <div class="fg"><label class="fl" data-i="t4">Kỳ hạn</label>
+     <select id="s_term" class="fc" style="appearance:auto"><option value="3">3 tháng (12 tuần)</option><option value="6">6 tháng (24 tuần)</option><option value="9">9 tháng (36 tuần)</option><option value="12">12 tháng (48 tuần)</option></select></div>
+    <div class="fg"><label class="fl" data-i="t5">Lãi suất tháng (%)</label><input type="number" id="s_rate" class="fc" value="0" step="0.1" required></div>
+    <div class="fg"><label class="fl" data-i="t6">Thu nhập TB / tuần</label><input type="number" id="s_income" class="fc" value="600000" required></div>
+    <div class="fg"><label class="fl" data-i="t7">Chi phí cố định / tuần</label><input type="number" id="s_cost" class="fc" value="50000" required></div>
+    <div class="fg"><label class="fl" data-i="t8">Quỹ dự phòng ban đầu</label><input type="number" id="s_reserve" class="fc" value="471001" required></div>
+    <button type="submit" class="btn" id="genBtn" data-i="t9">Tạo Lộ Trình</button>
+   </form>
+   <div style="margin-top:8px"><button class="btn btn-warn" onclick="importCSV()" style="font-size:10px" data-i="t10">Nhập từ CSV gốc</button></div>
+  </div>
+  <div class="pnl">
+   <div class="pnl-h dict-toggle" onclick="this.nextElementSibling.classList.toggle('open')"><span data-i="t11">Từ Điển Dòng Tiền</span><span>▼</span></div>
+   <div class="dict-body open" style="font-size:11px;line-height:1.7">
+    <p><strong class="c-tp" data-i="d1">Thu nhập:</strong><br><span style="color:var(--muted)" data-i="d1d">Nguồn thu chính (TP Bank). Inflow.</span></p>
+    <hr style="border:0;border-top:1px solid var(--bdr);margin:6px 0">
+    <p><strong class="c-mb" data-i="d2">Tiền Sống:</strong><br><span style="color:var(--muted)" data-i="d2d">Tiền có sẵn để tiêu (MB Bank).</span></p>
+    <hr style="border:0;border-top:1px solid var(--bdr);margin:6px 0">
+    <p><strong class="c-err" data-i="d3">Trích Nợ & Xăng:</strong><br><span style="color:var(--muted)" data-i="d3d">Chi phí bắt buộc. Outflow.</span></p>
+    <hr style="border:0;border-top:1px solid var(--bdr);margin:6px 0">
+    <p><strong class="c-gld" data-i="d4">Quỹ Dự Phòng:</strong><br><span style="color:var(--muted)" data-i="d4d">Khiên bảo vệ tài chính.</span></p>
+   </div>
+  </div>
+ </div>
+ <div class="main">
+  <div class="cards" id="cards">
+   <div class="card"><div class="lbl" data-i="c1">TB Thu Nhập</div><div class="val c-tp" id="sI">--</div></div>
+   <div class="card"><div class="lbl" data-i="c2">TB Tiền Sống</div><div class="val c-mb" id="sS">--</div></div>
+   <div class="card"><div class="lbl" data-i="c3">Dự Phòng Hiện Tại</div><div class="val c-gld" id="sR">--</div></div>
+   <div class="card"><div class="lbl" data-i="c4">Nợ Còn Lại</div><div class="val c-err" id="sD">--</div></div>
+  </div>
+  <div class="cbox" id="cBox"><button class="exp" onclick="tFS('cBox')">⛶</button><canvas id="chart"></canvas></div>
+  <div class="tbox" id="tBox"><button class="exp" onclick="tFS('tBox')">⛶</button>
+   <table><thead><tr>
+    <th data-i="h0">Kỳ</th><th data-i="h1">Thu Nhập</th><th data-i="h2">Cố Định</th><th data-i="h3">Trích Nợ</th>
+    <th data-i="h4">Rút D.Phòng</th><th data-i="h5">Tiền Sống</th><th data-i="h6">Thanh Toán</th>
+    <th data-i="h7">Q.Dự Phòng</th><th data-i="h8">Quỹ Nợ</th><th data-i="h9">Hành Động</th>
+   </tr></thead><tbody id="tb"></tbody></table>
+  </div>
+ </div>
+</div>
+<script>
+const T=localStorage.getItem('token'),U=localStorage.getItem('username');
+if(!T)location.href='/';
+document.getElementById('uName').textContent=U;
+function logout(){localStorage.clear();location.href='/';}
+
+// i18n
+const L={vi:{t0:'Quản Lý Dòng Tiền',t1:'Đăng Xuất',t2:'Thiết Lập Khoản Vay',t3:'Số tiền vay',t4:'Kỳ hạn',t5:'Lãi suất tháng (%)',t6:'Thu nhập TB / tuần',t7:'Chi phí cố định / tuần',t8:'Quỹ dự phòng ban đầu',t9:'Tạo Lộ Trình',t10:'Nhập từ CSV gốc',t11:'Từ Điển Dòng Tiền',
+d1:'Thu nhập:',d1d:'Nguồn thu chính (TP Bank).',d2:'Tiền Sống:',d2d:'Tiền có sẵn để tiêu (MB Bank).',d3:'Trích Nợ & Xăng:',d3d:'Chi phí bắt buộc.',d4:'Quỹ Dự Phòng:',d4d:'Khiên bảo vệ tài chính.',
+c1:'TB Thu Nhập',c2:'TB Tiền Sống',c3:'Dự Phòng Hiện Tại',c4:'Nợ Còn Lại',
+h0:'Kỳ',h1:'Thu Nhập',h2:'Cố Định',h3:'Trích Nợ',h4:'Rút D.Phòng',h5:'Tiền Sống',h6:'Thanh Toán',h7:'Q.Dự Phòng',h8:'Quỹ Nợ',h9:'Hành Động',
+be:'SỬA',bd:'XÓA'},
+en:{t0:'Cashflow Intelligence',t1:'Log Off',t2:'Loan Setup',t3:'Principal',t4:'Term',t5:'Monthly Rate (%)',t6:'Avg Weekly Income',t7:'Fixed Cost / Week',t8:'Initial Reserve',t9:'Generate Plan',t10:'Import from CSV',t11:'Cashflow Dictionary',
+d1:'Income:',d1d:'Primary inflow (TP Bank).',d2:'Spending:',d2d:'Liquid cash (MB Bank).',d3:'Debt & Fixed:',d3d:'Mandatory outflows.',d4:'Reserve:',d4d:'Financial safety shield.',
+c1:'Avg Income',c2:'Avg Spending',c3:'Current Reserve',c4:'Remaining Debt',
+h0:'Period',h1:'Income',h2:'Fixed Cost',h3:'Debt Ded.',h4:'Res. Withd.',h5:'Spending',h6:'Payment',h7:'Reserve',h8:'Debt Bal',h9:'Action',
+be:'EDIT',bd:'VOID'}};
+let lang='vi';
+function setLang(l){lang=l;document.querySelectorAll('[data-i]').forEach(e=>{const k=e.getAttribute('data-i');if(L[l][k])e.textContent=L[l][k];});rTbl();}
+
+// Currency
+let cur='VND',xr=1;
+async function setCur(c){cur=c;if(c==='VND'){xr=1;}else{try{const r=await fetch('https://open.er-api.com/v6/latest/VND');const d=await r.json();xr=d.rates[c];}catch(e){xr=1;alert('Exchange rate unavailable');}}rTbl();rChart();rCards();}
+function fmt(n){let v=n*xr;if(cur==='VND')return new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND'}).format(v);if(cur==='USD')return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(v);return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v);}
+
+// Fullscreen
+function tFS(id){const e=document.getElementById(id);if(!document.fullscreenElement)e.requestFullscreen().catch(()=>{});else document.exitFullscreen();}
+
+// Data
+let D=[],chart=null,editId=null;
+const H={Authorization:'Bearer '+T,'Content-Type':'application/json'};
+
+async function load(){try{const r=await fetch('/api/cashflows',{headers:H});if(r.status===401)return logout();D=await r.json();rCards();rTbl();rChart();}catch(e){console.error(e);}}
+
+function rCards(){if(!D.length)return;const last=D[D.length-1],wd=D.filter(d=>d.week_name!=='Số dư ban đầu');
+const ai=wd.length?wd.reduce((s,r)=>s+r.income,0)/wd.length:0;
+const as=wd.length?wd.reduce((s,r)=>s+r.spending,0)/wd.length:0;
+document.getElementById('sI').textContent=fmt(ai);document.getElementById('sS').textContent=fmt(as);
+document.getElementById('sR').textContent=fmt(last.reserve_balance);document.getElementById('sD').textContent=fmt(last.debt_balance);}
+
+function rTbl(){const tb=document.getElementById('tb');tb.innerHTML='';
+const be=L[lang].be,bd=L[lang].bd;
+D.forEach(r=>{const tr=document.createElement('tr');const init=r.week_name==='Số dư ban đầu';
+if(editId===r.id){tr.innerHTML=`<td style="color:#fff">${r.week_name}</td>
+<td><input type="number" id="ei_${r.id}" class="ei" value="${r.income}"></td>
+<td><input type="number" id="eg_${r.id}" class="ei" value="${r.gas}"></td>
+<td><input type="number" id="ed_${r.id}" class="ei" value="${r.debt_deduction}"></td>
+<td><input type="number" id="er_${r.id}" class="ei" value="${r.reserve_withdrawal}"></td>
+<td class="c-mb" style="font-weight:600">—</td>
+<td><input type="number" id="ep_${r.id}" class="ei" value="${r.payment}"></td>
+<td class="c-gld" style="font-weight:600">—</td><td class="c-err" style="font-weight:600">—</td>
+<td><button class="ab ab-s" onclick="saveE(${r.id})">✓</button><button class="ab ab-c" onclick="cancelE()">✕</button></td>`;}
+else{tr.innerHTML=`<td style="color:#fff">${r.week_name}</td>
+<td class="c-tp">${fmt(r.income)}</td><td class="c-err">${fmt(r.gas)}</td>
+<td class="c-err">${fmt(r.debt_deduction)}</td><td class="c-gld">${fmt(r.reserve_withdrawal)}</td>
+<td class="c-mb" style="font-weight:600">${fmt(r.spending)}</td><td class="c-sp">${fmt(r.payment)}</td>
+<td class="c-gld" style="font-weight:600">${fmt(r.reserve_balance)}</td>
+<td class="c-err" style="font-weight:600">${fmt(r.debt_balance)}</td>
+<td>${init?'':`<button class="ab ab-e" onclick="startE(${r.id})">${be}</button><button class="ab ab-d" onclick="delR(${r.id})">${bd}</button>`}</td>`;}
+tb.appendChild(tr);});}
+
+function startE(id){editId=id;rTbl();}
+function cancelE(){editId=null;rTbl();}
+async function saveE(id){const p={income:+document.getElementById('ei_'+id).value||0,gas:+document.getElementById('eg_'+id).value||0,debt_deduction:+document.getElementById('ed_'+id).value||0,reserve_withdrawal:+document.getElementById('er_'+id).value||0,payment:+document.getElementById('ep_'+id).value||0};
+editId=null;await fetch('/api/cashflows/'+id,{method:'PUT',headers:H,body:JSON.stringify(p)});load();}
+async function delR(id){if(!confirm('Xóa dòng này?'))return;await fetch('/api/cashflows/'+id,{method:'DELETE',headers:H});load();}
+
+// Generate Plan
+document.getElementById('setupForm').addEventListener('submit',async e=>{e.preventDefault();
+if(D.length>1&&!confirm('Dữ liệu hiện tại sẽ bị xóa. Tiếp tục?'))return;
+const b=document.getElementById('genBtn');b.textContent='...';b.disabled=true;
+await fetch('/api/generate_plan',{method:'POST',headers:H,body:JSON.stringify({
+principal:+document.getElementById('s_principal').value,term:+document.getElementById('s_term').value,
+interest_rate:+document.getElementById('s_rate').value,weekly_income:+document.getElementById('s_income').value,
+fixed_cost:+document.getElementById('s_cost').value,init_reserve:+document.getElementById('s_reserve').value})});
+b.textContent=L[lang].t9;b.disabled=false;load();});
+
+async function importCSV(){if(!confirm('Nhập dữ liệu từ file CSV gốc? Dữ liệu hiện tại sẽ bị xóa.'))return;
+await fetch('/api/import_csv',{method:'POST',headers:H});load();}
+
+// Chart
+function rChart(){if(!D.length)return;const ctx=document.getElementById('chart').getContext('2d');
+const cd=D.filter(d=>d.week_name!=='Số dư ban đầu'),lb=cd.map(d=>d.week_name);
+if(chart)chart.destroy();Chart.defaults.color='#7b8ca8';Chart.defaults.font.family='Inter';
+chart=new Chart(ctx,{type:'bar',data:{labels:lb,datasets:[
+{label:L[lang].h5,data:cd.map(d=>d.spending*xr),backgroundColor:'rgba(59,130,246,.6)',borderColor:'#3b82f6',borderWidth:1,borderRadius:3,order:3},
+{label:L[lang].h1,data:cd.map(d=>d.income*xr),backgroundColor:'rgba(16,185,129,.4)',borderColor:'#10b981',borderWidth:1,borderRadius:3,order:4},
+{label:L[lang].h7,type:'line',data:cd.map(d=>d.reserve_balance*xr),borderColor:'#d4a853',backgroundColor:'rgba(212,168,83,.08)',borderWidth:2,tension:.3,pointRadius:3,pointBackgroundColor:'#d4a853',fill:true,yAxisID:'y1',order:1},
+{label:L[lang].h8,type:'line',data:cd.map(d=>d.debt_balance*xr),borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.05)',borderWidth:2,borderDash:[4,4],tension:.3,pointRadius:3,pointBackgroundColor:'#ef4444',fill:true,yAxisID:'y1',order:2}]},
+options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+plugins:{legend:{labels:{boxWidth:8,font:{size:11},usePointStyle:true,pointStyle:'circle'}},
+tooltip:{backgroundColor:'rgba(10,14,26,.95)',borderColor:'rgba(99,130,180,.2)',borderWidth:1,cornerRadius:8,callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw/xr)}}},
+scales:{x:{grid:{color:'rgba(99,130,180,.06)'}},y:{position:'left',grid:{color:'rgba(99,130,180,.06)'}},y1:{position:'right',grid:{drawOnChartArea:false}}}}});}
+
+setLang('vi');load();
+</script>
+</body>
+</html>

@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng Nhập - Hệ Thống Dòng Tiền</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --error: #ef4444;
+            --success: #10b981;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', 'Segoe UI', sans-serif; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.08), transparent 30%),
+                radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 30%);
+            overflow: hidden;
+        }
+
+        /* Glassmorphism Container */
+        .auth-container {
+            width: 100%;
+            max-width: 420px;
+            perspective: 1000px;
+            padding: 1rem;
+        }
+
+        .auth-card-inner {
+            width: 100%;
+            position: relative;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+
+        .auth-container.flip .auth-card-inner {
+            transform: rotateY(180deg);
+        }
+
+        .glass-panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            position: absolute;
+            width: 100%;
+            backface-visibility: hidden;
+            top: 0;
+            left: 0;
+        }
+        
+        .front-panel {
+            position: relative;
+            z-index: 2;
+        }
+        
+        .back-panel {
+            transform: rotateY(180deg);
+        }
+
+        .logo-area {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo-area i {
+            font-size: 3rem;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+
+        .logo-area h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+        }
+
+        .logo-area p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+
+        .form-group i {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .form-control {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            color: var(--text-main);
+            padding: 0.875rem 1rem 0.875rem 3rem;
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .form-control::placeholder {
+            color: rgba(148, 163, 184, 0.5);
+        }
+
+        .btn {
+            width: 100%;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            color: white;
+            border: none;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+            margin-top: 0.5rem;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .switch-form {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .switch-form a {
+            color: #60a5fa;
+            text-decoration: none;
+            font-weight: 500;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .switch-form a:hover {
+            color: #93c5fd;
+            text-decoration: underline;
+        }
+
+        .msg-box {
+            display: none;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            text-align: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .msg-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .msg-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Floating elements in background */
+        .shape {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            z-index: -1;
+            opacity: 0.5;
+        }
+        .shape-1 {
+            width: 300px;
+            height: 300px;
+            background: #4f46e5;
+            top: -100px;
+            left: -100px;
+            animation: float 8s ease-in-out infinite;
+        }
+        .shape-2 {
+            width: 250px;
+            height: 250px;
+            background: #0ea5e9;
+            bottom: -50px;
+            right: -50px;
+            animation: float 10s ease-in-out infinite reverse;
+        }
+
+        @keyframes float {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(30px, -50px) rotate(120deg); }
+            66% { transform: translate(-20px, 20px) rotate(240deg); }
+            100% { transform: translate(0, 0) rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+
+    <div class="auth-container" id="authContainer">
+        <!-- Đảm bảo chiều cao cho container chứa các panel position: absolute -->
+        <div style="height: 520px;"></div> 
+        <div class="auth-card-inner" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+            
+            <!-- Mặt trước: Đăng nhập -->
+            <div class="glass-panel front-panel">
+                <div class="logo-area">
+                    <i class="fas fa-chart-pie"></i>
+                    <h2>CashFlow Dashboard</h2>
+                    <p>Đăng nhập để quản lý dòng tiền</p>
+                </div>
+
+                <div id="loginMsg" class="msg-box"></div>
+
+                <form id="loginForm">
+                    <div class="form-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="loginUsername" class="form-control" placeholder="Tên đăng nhập" required autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="loginPassword" class="form-control" placeholder="Mật khẩu" required autocomplete="current-password">
+                    </div>
+                    <button type="submit" class="btn">
+                        <i class="fas fa-sign-in-alt" style="margin-right: 8px;"></i>Đăng Nhập
+                    </button>
+                </form>
+
+                <div class="switch-form">
+                    Chưa có tài khoản? <a onclick="toggleForm()">Đăng ký ngay</a>
+                </div>
+            </div>
+
+            <!-- Mặt sau: Đăng ký -->
+            <div class="glass-panel back-panel">
+                <div class="logo-area">
+                    <i class="fas fa-user-plus"></i>
+                    <h2>Tạo Tài Khoản</h2>
+                    <p>Bắt đầu hành trình quản lý tài chính</p>
+                </div>
+
+                <div id="registerMsg" class="msg-box"></div>
+
+                <form id="registerForm">
+                    <div class="form-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="regUsername" class="form-control" placeholder="Tên đăng nhập" required autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="regPassword" class="form-control" placeholder="Mật khẩu" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <i class="fas fa-check-circle"></i>
+                        <input type="password" id="regConfirmPassword" class="form-control" placeholder="Xác nhận mật khẩu" required autocomplete="new-password">
+                    </div>
+                    <button type="submit" class="btn" style="background: linear-gradient(135deg, #10b981, #059669);">
+                        <i class="fas fa-user-check" style="margin-right: 8px;"></i>Tạo Tài Khoản
+                    </button>
+                </form>
+
+                <div class="switch-form">
+                    Đã có tài khoản? <a onclick="toggleForm()">Đăng nhập</a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Check if already logged in
+        if(localStorage.getItem('currentUser')) {
+            window.location.href = 'dashboard.html';
+        }
+
+        const container = document.getElementById('authContainer');
+        const loginForm = document.getElementById('loginForm');
+        const registerForm = document.getElementById('registerForm');
+        
+        const loginMsg = document.getElementById('loginMsg');
+        const registerMsg = document.getElementById('registerMsg');
+
+        function toggleForm() {
+            container.classList.toggle('flip');
+            // Xóa message khi lật trang
+            loginMsg.style.display = 'none';
+            registerMsg.style.display = 'none';
+            loginForm.reset();
+            registerForm.reset();
+        }
+
+        function showMessage(element, text, isError = true) {
+            element.textContent = text;
+            element.className = 'msg-box ' + (isError ? 'msg-error' : 'msg-success');
+            element.style.display = 'block';
+        }
+
+        // Lấy danh sách user (giả lập DB)
+        function getUsersDB() {
+            const users = localStorage.getItem('cashflow_users');
+            return users ? JSON.parse(users) : {};
+        }
+
+        // --- ĐĂNG KÝ ---
+        registerForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const user = document.getElementById('regUsername').value.trim();
+            const pass = document.getElementById('regPassword').value;
+            const confirmPass = document.getElementById('regConfirmPassword').value;
+
+            if (user.length < 3) {
+                return showMessage(registerMsg, "Tên đăng nhập phải có ít nhất 3 ký tự!");
+            }
+
+            if (pass !== confirmPass) {
+                return showMessage(registerMsg, "Mật khẩu xác nhận không khớp!");
+            }
+
+            if (pass.length < 4) {
+                return showMessage(registerMsg, "Mật khẩu quá ngắn!");
+            }
+
+            const db = getUsersDB();
+            if (db[user]) {
+                return showMessage(registerMsg, "Tên đăng nhập đã tồn tại!");
+            }
+
+            // Lưu vào "DB"
+            db[user] = {
+                password: btoa(pass), // Mã hóa nhẹ nhàng base64
+                createdAt: new Date().toISOString()
+            };
+            localStorage.setItem('cashflow_users', JSON.stringify(db));
+
+            showMessage(registerMsg, "Đăng ký thành công! Hãy đăng nhập.", false);
+            setTimeout(() => {
+                toggleForm();
+                document.getElementById('loginUsername').value = user;
+            }, 1500);
+        });
+
+        // --- ĐĂNG NHẬP ---
+        loginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const user = document.getElementById('loginUsername').value.trim();
+            const pass = document.getElementById('loginPassword').value;
+
+            const db = getUsersDB();
+            
+            // Check tài khoản
+            if (!db[user] || db[user].password !== btoa(pass)) {
+                return showMessage(loginMsg, "Tên đăng nhập hoặc mật khẩu không đúng!");
+            }
+
+            // Login thành công
+            showMessage(loginMsg, "Đăng nhập thành công! Đang chuyển hướng...", false);
+            localStorage.setItem('currentUser', user);
+            
+            setTimeout(() => {
+                window.location.href = 'dashboard.html';
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Quản Lý Dòng Tiền</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --color-tp: #10b981; /* Emerald */
+            --color-mb: #3b82f6; /* Blue */
+            --color-shopee: #f97316; /* Orange */
+            --color-debt: #ef4444; /* Red */
+            --color-reserve: #8b5cf6; /* Purple */
+            --color-gas: #eab308; /* Yellow */
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', 'Segoe UI', sans-serif; }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            background-image: radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.05), transparent 25%),
+                              radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.05), transparent 25%);
+        }
+
+        h1, h2, h3 { font-weight: 600; margin-bottom: 1rem; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .header h1 { font-size: 2rem; background: linear-gradient(to right, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .glass-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }
+
+        /* Vị trí để tiền */
+        .locations-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .location-card { display: flex; align-items: center; gap: 1rem; }
+        .loc-icon { width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+        .icon-tp { background: rgba(16, 185, 129, 0.2); color: var(--color-tp); }
+        .icon-mb { background: rgba(59, 130, 246, 0.2); color: var(--color-mb); }
+        .icon-shopee { background: rgba(249, 115, 22, 0.2); color: var(--color-shopee); }
+        
+        .loc-details h3 { margin: 0 0 0.25rem 0; font-size: 1.1rem; }
+        .loc-details p { color: var(--text-muted); font-size: 0.9rem; margin: 0; line-height: 1.4; }
+
+        /* Bố cục chính */
+        .main-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+        @media (max-width: 1024px) { .main-grid { grid-template-columns: 1fr; } }
+        
+        .chart-container { position: relative; height: 400px; width: 100%; }
+        
+        .rules-card ul { list-style: none; }
+        .rules-card li { margin-bottom: 1rem; display: flex; align-items: flex-start; gap: 0.75rem; }
+        .rules-card i { margin-top: 0.25rem; font-size: 1.1rem; }
+        .rules-card code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.85em; color: #fbbf24;}
+
+        /* Bảng log hệ thống */
+        .table-container { overflow-x: auto; margin-top: 2rem; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 900px; }
+        th, td { padding: 1rem; text-align: right; border-bottom: 1px solid var(--card-border); }
+        th { text-align: right; color: var(--text-muted); font-weight: 500; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        th:first-child, td:first-child { text-align: left; }
+        
+        tbody tr:hover { background: rgba(255,255,255,0.02); }
+        
+        .val-income { color: var(--color-tp); font-weight: 600; }
+        .val-spend { color: var(--color-mb); font-weight: 600; }
+        .val-debt { color: var(--color-debt); font-weight: 600; }
+        .val-reserve { color: var(--color-reserve); font-weight: 600; }
+        
+        .upload-btn {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem;
+            cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;
+            transition: opacity 0.2s;
+        }
+        .upload-btn:hover { opacity: 0.9; }
+        #csv-input { display: none; }
+        .logout-btn {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem;
+            cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;
+            transition: opacity 0.2s; margin-left: 0.5rem; text-decoration: none;
+        }
+        .logout-btn:hover { opacity: 0.9; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h1>Hệ Thống Dòng Tiền</h1>
+            <p style="color: var(--text-muted);">Đọc theo chiều dọc - Hiểu theo dòng chảy</p>
+        </div>
+        <div style="display: flex; align-items: center;">
+            <label class="upload-btn" for="csv-input">
+                <i class="fas fa-upload"></i> Cập nhật File CSV
+            </label>
+            <input type="file" id="csv-input" accept=".csv" />
+            
+            <a href="#" class="logout-btn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i> Đăng xuất
+            </a>
+        </div>
+    </div>
+
+    <!-- Vị trí để tiền -->
+    <h2 style="font-size: 1.25rem; color: var(--text-muted); margin-bottom: 1rem;">🏦 Bản Đồ Vị Trí Tiền (Routing)</h2>
+    <div class="locations-grid">
+        <div class="glass-card location-card">
+            <div class="loc-icon icon-tp"><i class="fas fa-university"></i></div>
+            <div class="loc-details">
+                <h3 style="color: var(--color-tp);">TP Bank (Thu Nhập)</h3>
+                <p>Nơi nhận <strong>Thu Nhập</strong> ban đầu. Có thể rút thành tiền mặt để tiêu (VD: Đổ xăng).</p>
+            </div>
+        </div>
+        
+        <div class="glass-card location-card">
+            <div class="loc-icon icon-mb"><i class="fas fa-mobile-alt"></i></div>
+            <div class="loc-details">
+                <h3 style="color: var(--color-mb);">MB Bank (Tiền Sống)</h3>
+                <p>Nơi giữ <strong>Tiền Ăn / Tiền Sống</strong>. Dùng cho Online Banking, quét mã QR, không tiền mặt.</p>
+            </div>
+        </div>
+
+        <div class="glass-card location-card">
+            <div class="loc-icon icon-shopee"><i class="fas fa-wallet"></i></div>
+            <div class="loc-details">
+                <h3 style="color: var(--color-shopee);">ShopeePay (Thanh Toán)</h3>
+                <p>Nơi liên kết thanh toán nợ tự động. Tới kỳ trả nợ, trừ thẳng từ <strong>Quỹ Nợ</strong> qua ví này.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Biểu đồ và Rules -->
+    <div class="main-grid">
+        <div class="glass-card">
+            <h2>📈 Biến Động Qua Từng Tuần</h2>
+            <div class="chart-container">
+                <canvas id="cashflowChart"></canvas>
+            </div>
+        </div>
+
+        <div class="glass-card rules-card">
+            <h2>🧠 Logic Hệ Thống</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Cơ chế phân bổ tự động:</p>
+            <ul>
+                <li>
+                    <i class="fas fa-arrow-down" style="color: var(--color-tp);"></i>
+                    <div>
+                        <strong>1. Nhận Thu Nhập</strong> (TP Bank)<br>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Mọi nguồn tiền đổ về đây đầu tiên.</span>
+                    </div>
+                </li>
+                <li>
+                    <i class="fas fa-lock" style="color: var(--color-debt);"></i>
+                    <div>
+                        <strong>2. Cắt Phế Cố Định</strong><br>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Trừ Tiền Xăng (Tiền mặt) và Trích Quỹ Nợ trước.</span>
+                    </div>
+                </li>
+                <li>
+                    <i class="fas fa-life-ring" style="color: var(--color-reserve);"></i>
+                    <div>
+                        <strong>3. Cứu Trợ</strong> (Nếu cần)<br>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Nếu thu nhập &lt; 600k ➔ <code>Rút quỹ dự phòng</code>.</span>
+                    </div>
+                </li>
+                <li>
+                    <i class="fas fa-random" style="color: var(--color-mb);"></i>
+                    <div>
+                        <strong>4. Chuyển Tiền Sống</strong> (MB Bank)<br>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Phần còn lại sau 3 bước chuyển sang MB Bank để tiêu.</span>
+                    </div>
+                </li>
+                <li>
+                    <i class="fas fa-receipt" style="color: var(--color-shopee);"></i>
+                    <div>
+                        <strong>5. Thanh Toán</strong> (ShopeePay)<br>
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Đến kỳ hạn, tiền từ Quỹ Nợ tự trừ qua ví ShopeePay.</span>
+                    </div>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Bảng Log -->
+    <div class="glass-card">
+        <h2>📋 Log Hệ Thống Dòng Tiền</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            Quy tắc đọc: <strong>Đọc theo từng dòng ➔ Từ trái sang phải</strong> như xem Log hệ thống.
+        </p>
+        <div class="table-container">
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Thời gian</th>
+                        <th style="color: var(--color-tp);">Thu nhập<br>(TP Bank)</th>
+                        <th>Tiền xăng<br>(Tiền mặt)</th>
+                        <th>Trích quỹ nợ<br>(Để dành trả nợ)</th>
+                        <th>Rút dự phòng<br>(Cứu trợ)</th>
+                        <th style="color: var(--color-mb);">Tiền ăn/Sống<br>(Chuyển MB Bank)</th>
+                        <th style="color: var(--color-shopee);">Thanh toán nợ<br>(ShopeePay)</th>
+                        <th>Quỹ dự phòng<br>(Số dư)</th>
+                        <th>Quỹ nợ<br>(Số dư)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- JS sẽ điền dữ liệu -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Xử lý xác thực người dùng (Auth Check)
+        const currentUser = localStorage.getItem('currentUser');
+        if(!currentUser) {
+            window.location.href = 'index.html';
+        }
+
+        function logout() {
+            localStorage.removeItem('currentUser');
+            window.location.href = 'index.html';
+        }
+
+        // Dữ liệu ban đầu (Default CSV data pre-loaded for immediate WOW effect)
+        let cashflowData = [
+            {"Tuan": "Số dư ban đầu", "ThuNhap": 0, "Xang": 0, "TrichNo": 0, "RutDuPhong": 0, "TienAn": 0, "ThanhToan": 0, "QuyDuPhong": 471001, "QuyNo": 0},
+            {"Tuan": "Tuần 1", "ThuNhap": 500000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 100000, "TienAn": 285996, "ThanhToan": 0, "QuyDuPhong": 371001, "QuyNo": 264004},
+            {"Tuan": "Tuần 2", "ThuNhap": 700000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 0, "TienAn": 385996, "ThanhToan": 0, "QuyDuPhong": 371001, "QuyNo": 528008},
+            {"Tuan": "Tuần 3", "ThuNhap": 500000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 100000, "TienAn": 285996, "ThanhToan": 0, "QuyDuPhong": 271001, "QuyNo": 792012},
+            {"Tuan": "Tuần 4", "ThuNhap": 700000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 0, "TienAn": 385996, "ThanhToan": 944622, "QuyDuPhong": 271001, "QuyNo": 111394},
+            {"Tuan": "Tuần 5", "ThuNhap": 500000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 100000, "TienAn": 285996, "ThanhToan": 0, "QuyDuPhong": 171001, "QuyNo": 375398},
+            {"Tuan": "Tuần 6", "ThuNhap": 700000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 0, "TienAn": 385996, "ThanhToan": 0, "QuyDuPhong": 171001, "QuyNo": 639402},
+            {"Tuan": "Tuần 7", "ThuNhap": 500000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 100000, "TienAn": 285996, "ThanhToan": 0, "QuyDuPhong": 71001, "QuyNo": 903406},
+            {"Tuan": "Tuần 8", "ThuNhap": 600000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 0, "TienAn": 285996, "ThanhToan": 1110238, "QuyDuPhong": 71001, "QuyNo": 57172},
+            {"Tuan": "Tuần 9", "ThuNhap": 500000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 71001, "TienAn": 256997, "ThanhToan": 0, "QuyDuPhong": 0, "QuyNo": 321176},
+            {"Tuan": "Tuần 10", "ThuNhap": 700000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 0, "TienAn": 385996, "ThanhToan": 0, "QuyDuPhong": 0, "QuyNo": 585180},
+            {"Tuan": "Tuần 11", "ThuNhap": 600000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 0, "TienAn": 285996, "ThanhToan": 0, "QuyDuPhong": 0, "QuyNo": 849184},
+            {"Tuan": "Tuần 12", "ThuNhap": 700000, "Xang": 50000, "TrichNo": 264004, "RutDuPhong": 0, "TienAn": 385996, "ThanhToan": 1113187, "QuyDuPhong": 0, "QuyNo": 1}
+        ];
+
+        let myChart = null;
+
+        function formatVND(num) {
+            if(num === "" || num === null || isNaN(num)) return "";
+            return new Intl.NumberFormat('vi-VN').format(num) + ' đ';
+        }
+
+        function renderDashboard() {
+            renderTable();
+            renderChart();
+        }
+
+        function renderTable() {
+            const tbody = document.querySelector("#dataTable tbody");
+            tbody.innerHTML = "";
+            cashflowData.forEach(row => {
+                const tr = document.createElement("tr");
+                
+                // Formats according to logical coloring
+                tr.innerHTML = `
+                    <td style="font-weight: 600; color: #fff;">${row.Tuan}</td>
+                    <td class="val-income">${row.ThuNhap ? formatVND(row.ThuNhap) : '-'}</td>
+                    <td style="color: var(--color-gas);">${row.Xang ? formatVND(row.Xang) : '-'}</td>
+                    <td style="color: var(--text-muted);">${row.TrichNo ? formatVND(row.TrichNo) : '-'}</td>
+                    <td style="color: var(--color-reserve);">${row.RutDuPhong ? '+' + formatVND(row.RutDuPhong) : '-'}</td>
+                    <td class="val-spend">${row.TienAn ? formatVND(row.TienAn) : '-'}</td>
+                    <td style="color: var(--color-shopee);">${row.ThanhToan ? formatVND(row.ThanhToan) : '-'}</td>
+                    <td class="val-reserve">${row.QuyDuPhong !== "" ? formatVND(row.QuyDuPhong) : '-'}</td>
+                    <td class="val-debt">${row.QuyNo !== "" ? formatVND(row.QuyNo) : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderChart() {
+            const ctx = document.getElementById('cashflowChart').getContext('2d');
+            
+            // Remove 'Số dư ban đầu' for cleaner chart
+            const chartData = cashflowData.filter(d => d.Tuan.includes('Tuần'));
+            const labels = chartData.map(d => d.Tuan);
+
+            if(myChart) myChart.destroy();
+
+            Chart.defaults.color = '#94a3b8';
+            Chart.defaults.font.family = "'Inter', sans-serif";
+
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Tiền Sống (MB Bank)',
+                            data: chartData.map(d => d.TienAn),
+                            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                            borderColor: '#3b82f6',
+                            borderWidth: 1,
+                            order: 3
+                        },
+                        {
+                            label: 'Thu Nhập (TP Bank)',
+                            data: chartData.map(d => d.ThuNhap),
+                            backgroundColor: 'rgba(16, 185, 129, 0.3)',
+                            borderColor: '#10b981',
+                            borderWidth: 1,
+                            order: 4
+                        },
+                        {
+                            label: 'Quỹ Dự Phòng',
+                            type: 'line',
+                            data: chartData.map(d => d.QuyDuPhong),
+                            borderColor: '#8b5cf6',
+                            backgroundColor: '#8b5cf6',
+                            tension: 0.4,
+                            borderWidth: 3,
+                            fill: false,
+                            yAxisID: 'y1',
+                            order: 1
+                        },
+                        {
+                            label: 'Quỹ Nợ',
+                            type: 'line',
+                            data: chartData.map(d => d.QuyNo),
+                            borderColor: '#ef4444',
+                            backgroundColor: '#ef4444',
+                            tension: 0.4,
+                            borderWidth: 3,
+                            borderDash: [5, 5],
+                            fill: false,
+                            yAxisID: 'y1',
+                            order: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                            titleFont: { size: 14, family: "'Inter', sans-serif" },
+                            bodyFont: { size: 13, family: "'Inter', sans-serif" },
+                            padding: 12,
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) { label += new Intl.NumberFormat('vi-VN').format(context.parsed.y) + ' đ'; }
+                                    return label;
+                                }
+                            }
+                        },
+                        legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8, padding: 20 } }
+                    },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: {
+                            type: 'linear', display: true, position: 'left',
+                            title: { display: true, text: 'Thu nhập & Tiền sống' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        y1: {
+                            type: 'linear', display: true, position: 'right',
+                            title: { display: true, text: 'Quỹ Nợ / Dự Phòng' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        // CSV Uploader Feature
+        document.getElementById('csv-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const rows = text.split('\n');
+                
+                let newData = [];
+                for(let i=1; i<rows.length; i++) {
+                    const row = rows[i].trim();
+                    if(!row) continue;
+                    
+                    const cols = row.split(',');
+                    if(cols.length >= 9) {
+                        newData.push({
+                            "Tuan": cols[0],
+                            "ThuNhap": parseFloat(cols[1]) || 0,
+                            "Xang": parseFloat(cols[2]) || 0,
+                            "TrichNo": parseFloat(cols[3]) || 0,
+                            "RutDuPhong": parseFloat(cols[4]) || 0,
+                            "TienAn": parseFloat(cols[5]) || 0,
+                            "ThanhToan": parseFloat(cols[6]) || 0,
+                            "QuyDuPhong": parseFloat(cols[7]) || 0,
+                            "QuyNo": parseFloat(cols[8]) || 0
+                        });
+                    }
+                }
+                if(newData.length > 0) {
+                    cashflowData = newData;
+                    renderDashboard();
+                    alert('Đã tải dữ liệu CSV thành công!');
+                } else {
+                    alert('Lỗi: File CSV không đúng định dạng.');
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        // Khởi chạy ngay khi tải trang
+        document.addEventListener('DOMContentLoaded', renderDashboard);
+    </script>
+</body>
+</html>
