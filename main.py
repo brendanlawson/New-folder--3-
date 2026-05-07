@@ -17,7 +17,7 @@ def init_db():
     c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL, token TEXT)""")
+        password_hash TEXT NOT NULL, token TEXT, created_at TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS cashflows (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
         week_name TEXT, week_date TEXT,
@@ -30,6 +30,11 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
         cashflow_id INTEGER, week_name TEXT, field TEXT, old_value REAL, new_value REAL,
         changed_at TEXT, FOREIGN KEY (user_id) REFERENCES users(id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS banks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+        name TEXT NOT NULL, role TEXT DEFAULT '',
+        color TEXT DEFAULT '#3b82f6', is_hidden INTEGER DEFAULT 0,
+        created_at TEXT, FOREIGN KEY (user_id) REFERENCES users(id))""")
     conn.commit()
     conn.close()
 
@@ -76,6 +81,32 @@ def recalculate_all(user_id):
     conn.commit()
     conn.close()
 
+# --- PROFILE ---
+@app.route('/api/profile', methods=['GET'])
+@require_auth
+def get_profile(current_user):
+    conn = get_db()
+    weeks = conn.execute("SELECT COUNT(*) as c FROM cashflows WHERE user_id = ? AND week_name != 'Số dư ban đầu'", (current_user['id'],)).fetchone()['c']
+    changes = conn.execute("SELECT COUNT(*) as c FROM audit_log WHERE user_id = ?", (current_user['id'],)).fetchone()['c']
+    conn.close()
+    return jsonify({"username": current_user['username'], "created_at": current_user['created_at'] or 'N/A', "total_weeks": weeks, "total_changes": changes})
+
+@app.route('/api/profile', methods=['PUT'])
+@require_auth
+def update_profile(current_user):
+    data = request.json
+    old_pw = data.get('old_password', '')
+    new_pw = data.get('new_password', '')
+    if not old_pw or not new_pw:
+        return jsonify({"detail": "Missing fields"}), 400
+    if current_user['password_hash'] != hash_password(old_pw):
+        return jsonify({"detail": "Wrong current password"}), 400
+    conn = get_db()
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new_pw), current_user['id']))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Password updated"})
+
 # --- AUTH ---
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -85,8 +116,20 @@ def register():
     if c.execute("SELECT * FROM users WHERE username = ?", (data['username'],)).fetchone():
         conn.close()
         return jsonify({"detail": "Username already registered"}), 400
-    c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)",
-              (data['username'], hash_password(data['password'])))
+    c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+              (data['username'], hash_password(data['password']), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    user_id = c.lastrowid
+    # Seed default banks
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    defaults = [
+        ('TP Bank', 'income', '#10b981'),
+        ('MB Bank', 'spending', '#3b82f6'),
+        ('ShopeePay', 'payment', '#f59e0b'),
+        ('Quỹ Dự Phòng', 'reserve', '#d4a853'),
+    ]
+    for name, role, color in defaults:
+        c.execute("INSERT INTO banks (user_id, name, role, color, created_at) VALUES (?,?,?,?,?)",
+                  (user_id, name, role, color, now))
     conn.commit()
     conn.close()
     return jsonify({"message": "User created successfully"})
@@ -262,6 +305,48 @@ def get_history(current_user):
     rows = conn.execute("SELECT * FROM audit_log WHERE user_id = ? ORDER BY id DESC LIMIT 50", (current_user['id'],)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+# --- BANKS ---
+@app.route('/api/banks', methods=['GET'])
+@require_auth
+def get_banks(current_user):
+    show_hidden = request.args.get('all', '0') == '1'
+    conn = get_db()
+    if show_hidden:
+        rows = conn.execute("SELECT * FROM banks WHERE user_id = ? ORDER BY id ASC", (current_user['id'],)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM banks WHERE user_id = ? AND is_hidden = 0 ORDER BY id ASC", (current_user['id'],)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/banks', methods=['POST'])
+@require_auth
+def add_bank(current_user):
+    data = request.json
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT INTO banks (user_id, name, role, color, created_at) VALUES (?,?,?,?,?)",
+              (current_user['id'], data.get('name', 'New Bank'), data.get('role', ''),
+               data.get('color', '#3b82f6'), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Bank added"})
+
+@app.route('/api/banks/<int:bid>', methods=['PUT'])
+@require_auth
+def update_bank(current_user, bid):
+    data = request.json
+    conn = get_db()
+    bank = conn.execute("SELECT * FROM banks WHERE id = ? AND user_id = ?", (bid, current_user['id'])).fetchone()
+    if not bank:
+        conn.close()
+        return jsonify({"detail": "Not found"}), 404
+    conn.execute("UPDATE banks SET name=?, role=?, color=?, is_hidden=? WHERE id=?",
+                 (data.get('name', bank['name']), data.get('role', bank['role']),
+                  data.get('color', bank['color']), int(data.get('is_hidden', bank['is_hidden'])), bid))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Bank updated"})
 
 # --- ROUTES ---
 @app.route('/')
