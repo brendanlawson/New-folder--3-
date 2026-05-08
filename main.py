@@ -82,6 +82,10 @@ def init_db():
     item_cols = {r[1] for r in c.execute("PRAGMA table_info(cashflow_loan_items)").fetchall()}
     if 'installment_no' not in item_cols:
         c.execute("ALTER TABLE cashflow_loan_items ADD COLUMN installment_no INTEGER DEFAULT 0")
+    if 'payment_covered' not in item_cols:
+        c.execute("ALTER TABLE cashflow_loan_items ADD COLUMN payment_covered REAL DEFAULT 0")
+    if 'cover_source' not in item_cols:
+        c.execute("ALTER TABLE cashflow_loan_items ADD COLUMN cover_source TEXT")
     conn.commit()
     conn.close()
 
@@ -390,20 +394,24 @@ def update_loan(current_user, lid):
         return jsonify({"detail": "Not found"}), 404
     fields = ['name', 'principal', 'interest_rate', 'term_months', 'start_date',
               'payment_day', 'lender', 'purpose', 'color', 'status', 'notify_email',
-              'payment_mode', 'total_interest', 'allow_early_payoff']
+              'payment_mode', 'total_interest', 'allow_early_payoff', 'refinance_target_id']
     updates = {f: data.get(f, loan[f]) for f in fields}
     if updates['payment_mode'] not in ('emi', 'fixed_total', 'custom_schedule'):
         conn.close()
         return jsonify({"detail": "invalid payment_mode"}), 400
+    refi = updates['refinance_target_id']
+    refi = int(refi) if refi not in (None, '', 0) else None
     c = conn.cursor()
     c.execute("""UPDATE loans SET name=?, principal=?, interest_rate=?, term_months=?,
                  start_date=?, payment_day=?, lender=?, purpose=?, color=?, status=?,
-                 notify_email=?, payment_mode=?, total_interest=?, allow_early_payoff=? WHERE id=?""",
+                 notify_email=?, payment_mode=?, total_interest=?, allow_early_payoff=?,
+                 refinance_target_id=? WHERE id=?""",
               (updates['name'], float(updates['principal']), float(updates['interest_rate']),
                int(updates['term_months']), updates['start_date'], int(updates['payment_day']),
                updates['lender'], updates['purpose'], updates['color'], updates['status'],
                int(updates['notify_email']), updates['payment_mode'],
-               float(updates['total_interest'] or 0), int(updates['allow_early_payoff']), lid))
+               float(updates['total_interest'] or 0), int(updates['allow_early_payoff']),
+               refi, lid))
     if updates['payment_mode'] == 'custom_schedule' and 'schedule' in data:
         _save_schedule(c, lid, int(updates['term_months']), data.get('schedule') or [])
     conn.commit()
@@ -627,6 +635,26 @@ def generate_plan(current_user):
     total_weeks = (total_days // 7) + 1
     prev_res = init_reserve
 
+    # Index loan_params by loan_id for refinance lookup
+    lp_by_id = {lp['loan']['id']: lp for lp in loan_params}
+
+    # Pre-compute: for each refinance loan, find the FIRST upcoming due date of its target
+    # (after refinance loan's start_date) — that's when the refinance money is "spent"
+    # to cover that installment of the target loan.
+    for lp in loan_params:
+        l = lp['loan']
+        target_id = l['refinance_target_id'] if 'refinance_target_id' in l.keys() else None
+        lp['refi_target_inst'] = None  # which installment_no of target this loan covers
+        lp['refi_apply_date'] = None    # date when the cover happens
+        if l['purpose'] == 'refinance' and target_id and target_id in lp_by_id:
+            target = lp_by_id[target_id]
+            # find first installment of target with due_date >= refinance loan start_date
+            for k, due in enumerate(target['due_dates'], start=1):
+                if due >= lp['start'].date():
+                    lp['refi_target_inst'] = k
+                    lp['refi_apply_date'] = due
+                    break
+
     for w in range(1, total_weeks + 1):
         week_start = earliest_start + timedelta(weeks=w-1)
         week_end = week_start + timedelta(days=6)
@@ -635,14 +663,30 @@ def generate_plan(current_user):
         sum_ded = 0.0
         sum_payment = 0.0
         sum_debt = 0.0
-        items = []  # (loan_id, weekly_ded, payment, debt_balance, is_pay_week)
+        items = []  # (loan_id, weekly_ded, payment, debt_balance, is_pay_week, inst_no)
+
+        # Refinance: when target loan's covered installment due_date falls in this week,
+        # the refinance loan's principal pays for that installment of the target.
+        # Map: target_loan_id -> {covered_amount, source_loan_name, target_inst_no}
+        refinance_covers = {}
+        for lp in loan_params:
+            if (lp.get('refi_apply_date') and not lp.get('refinanced_done')
+                    and week_start.date() <= lp['refi_apply_date'] <= week_end.date()):
+                target = lp_by_id[lp['loan']['refinance_target_id']]
+                inst_idx = lp['refi_target_inst'] - 1
+                inst_amount = target['amounts'][inst_idx] if inst_idx < len(target['amounts']) else 0
+                cover = min(float(lp['loan']['principal']), inst_amount)
+                refinance_covers[target['loan']['id']] = {
+                    'cover': cover,
+                    'inst': lp['refi_target_inst'],
+                    'source': lp['loan']['name'],
+                }
+                lp['refinanced_done'] = True
 
         for lp in loan_params:
             l = lp['loan']
             # Loan active this week if start <= week_end and not yet ended
             if lp['start'].date() > week_end.date() or lp['end'].date() <= week_start.date():
-                # Not active in this week — but include with 0 if there is balance from past payments? No: skip
-                # Still emit row only if loan ever produced balance (skip if completely outside window)
                 continue
             # Weekly deduction accrues only while loan is active and not yet fully paid
             if lp['paid_count'] >= l['term_months']:
@@ -652,21 +696,34 @@ def generate_plan(current_user):
             lp['remaining_balance'] += weekly_ded
 
             # Payment if any due_date falls within this week (use per-installment amount)
-            payment = 0.0
+            # Check if a refinance loan covers an installment of THIS loan in this week
+            cover_info = refinance_covers.pop(l['id'], None)
+
+            payment = 0.0          # what the user actually pays from income
+            payment_covered = 0.0  # what was paid by refinance source (informational)
             is_pay_week = 0
             installment_no = 0
             for idx, d in enumerate(lp['due_dates']):
                 if week_start.date() <= d <= week_end.date() and lp['paid_count'] < l['term_months']:
-                    payment += lp['amounts'][idx] if idx < len(lp['amounts']) else 0
+                    inst_amt = lp['amounts'][idx] if idx < len(lp['amounts']) else 0
+                    # If this is the installment covered by a refinance loan, source covers it
+                    if cover_info and cover_info['inst'] == idx + 1:
+                        covered = min(cover_info['cover'], inst_amt)
+                        payment_covered += covered
+                        payment += inst_amt - covered  # user pays the rest (if any)
+                    else:
+                        payment += inst_amt
                     lp['paid_count'] += 1
                     is_pay_week = 1
-                    installment_no = lp['paid_count']  # 1-based
-            lp['remaining_balance'] -= payment
+                    installment_no = lp['paid_count']
+            # Reduce remaining_balance by total paid (user + cover)
+            lp['remaining_balance'] -= (payment + payment_covered)
 
             sum_ded += weekly_ded
-            sum_payment += payment
+            sum_payment += payment  # only user-paid amount affects cashflow sum
             sum_debt += lp['remaining_balance']
-            items.append((l['id'], weekly_ded, payment, lp['remaining_balance'], is_pay_week, installment_no))
+            # Encode covered amount in tuple by adding extra slot
+            items.append((l['id'], weekly_ded, payment, lp['remaining_balance'], is_pay_week, installment_no, payment_covered, cover_info['source'] if cover_info else None))
 
         # Spending and reserve logic (same as before, but using sum)
         spending_raw = weekly_income - fixed_cost - sum_ded
@@ -681,9 +738,9 @@ def generate_plan(current_user):
             (current_user['id'], f'Tuần {w}', week_date_str, weekly_income, fixed_cost,
              sum_ded, res_withdrawal, spending, sum_payment, new_res, sum_debt))
         cashflow_id = c.lastrowid
-        for (loan_id, wd, pay, bal, ipw, inst) in items:
-            c.execute("""INSERT INTO cashflow_loan_items (cashflow_id, loan_id, weekly_deduction, payment, debt_balance, is_payment_week, installment_no)
-                         VALUES (?,?,?,?,?,?,?)""", (cashflow_id, loan_id, wd, pay, bal, ipw, inst))
+        for (loan_id, wd, pay, bal, ipw, inst, covered, source) in items:
+            c.execute("""INSERT INTO cashflow_loan_items (cashflow_id, loan_id, weekly_deduction, payment, debt_balance, is_payment_week, installment_no, payment_covered, cover_source)
+                         VALUES (?,?,?,?,?,?,?,?,?)""", (cashflow_id, loan_id, wd, pay, bal, ipw, inst, covered, source))
         prev_res = new_res
 
     conn.commit()

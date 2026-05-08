@@ -81,7 +81,7 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
 .export-btn svg{width:14px;height:14px}
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:1000;justify-content:center;align-items:center}
 .modal-overlay.open{display:flex}
-.modal{background:var(--card);border:1px solid var(--bdr);border-radius:16px;width:400px;max-width:90vw;padding:28px;animation:fi .3s ease-out}
+.modal{background:var(--card);border:1px solid var(--bdr);border-radius:16px;width:400px;max-width:90vw;max-height:90vh;overflow-y:auto;padding:28px;animation:fi .3s ease-out}
 .modal-close{position:absolute;top:12px;right:16px;background:0;border:0;color:var(--muted);font-size:20px;cursor:pointer}
 .modal h2{font-size:16px;font-weight:600;margin-bottom:18px;display:flex;align-items:center;gap:10px}
 .avatar{width:42px;height:42px;background:var(--grad);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;box-shadow:0 4px 14px var(--glow)}
@@ -165,11 +165,16 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
    </div>
    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end">
     <div class="fg" style="margin-bottom:0"><label class="fl">Mục đích</label>
-     <select id="loan_purpose" class="fc" style="appearance:auto">
+     <select id="loan_purpose" class="fc" style="appearance:auto" onchange="onPurposeChange()">
       <option value="purchase">Mua sắm / chi tiêu</option>
       <option value="refinance">Đảo nợ (trả khoản vay khác)</option>
      </select></div>
     <div class="fg" style="margin-bottom:0"><label class="fl">Màu</label><input type="color" id="loan_color" class="fc" value="#2962ff" style="height:36px;padding:2px"></div>
+   </div>
+   <div class="fg" id="refinanceTargetWrap" style="display:none">
+    <label class="fl">Trả khoản vay nào?</label>
+    <select id="loan_refi_target" class="fc" style="appearance:auto"></select>
+    <div style="font-size:10px;color:var(--muted);margin-top:4px">Tại ngày bắt đầu của khoản này, tiền giải ngân sẽ tự động dùng trả dư nợ của khoản đã chọn.</div>
    </div>
    <div class="fg"><label class="fl">Cách tính tiền/tháng</label>
     <select id="loan_mode" class="fc" style="appearance:auto" onchange="onModeChange()">
@@ -385,10 +390,20 @@ async function toggleBreakdown(cfid,btn){
  }else{
   inner=`<table style="width:100%"><thead><tr><th style="text-align:left">Khoản vay</th><th>Trích tuần</th><th>Trả góp (kỳ)</th><th>Dư nợ</th></tr></thead><tbody>`;
   items.forEach(i=>{
-   const editable=i.payment>0&&i.installment_no>0;
-   const payCell=editable
-    ?`<span class="inst-pay" data-loan="${i.loan_id}" data-inst="${i.installment_no}" data-cfid="${cfid}" data-amt="${i.payment}" style="color:var(--warn);cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Click để sửa kỳ ${i.installment_no}">${fmt(i.payment)} <span style="color:var(--muted);font-size:10px">(kỳ ${i.installment_no})</span> ✏️</span>`
-    :(i.payment>0?fmt(i.payment):'<span style="color:var(--muted)">—</span>');
+   const covered=+i.payment_covered||0;
+   const totalPaid=(+i.payment||0)+covered;
+   const editable=totalPaid>0&&i.installment_no>0;
+   let payCell;
+   if(covered>0&&i.installment_no>0){
+    // This installment was (partly or fully) paid by another loan's principal
+    const userPart=+i.payment||0;
+    const userTxt=userPart>0?`<br><span style="font-size:10px;color:var(--warn)">Bạn trả: ${fmt(userPart)}</span>`:'';
+    payCell=`<span class="inst-pay" data-loan="${i.loan_id}" data-inst="${i.installment_no}" data-cfid="${cfid}" data-amt="${totalPaid}" style="color:#a855f7;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Click để sửa kỳ ${i.installment_no}">${fmt(totalPaid)} <span style="color:var(--muted);font-size:10px">(kỳ ${i.installment_no})</span> ✏️</span><br><span style="font-size:10px;color:#a855f7">🔄 ${fmt(covered)} từ ${i.cover_source||'khoản khác'}</span>${userTxt}`;
+   }else if(editable){
+    payCell=`<span class="inst-pay" data-loan="${i.loan_id}" data-inst="${i.installment_no}" data-cfid="${cfid}" data-amt="${i.payment}" style="color:var(--warn);cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Click để sửa kỳ ${i.installment_no}">${fmt(i.payment)} <span style="color:var(--muted);font-size:10px">(kỳ ${i.installment_no})</span> ✏️</span>`;
+   }else{
+    payCell=i.payment>0?fmt(i.payment):'<span style="color:var(--muted)">—</span>';
+   }
    inner+=`<tr><td style="text-align:left;color:#fff"><span class="lp-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${i.loan_color};margin-right:6px"></span>${i.loan_name}${i.lender?' <span style="color:var(--muted);font-size:10px">('+i.lender+')</span>':''}</td><td style="text-align:right">${fmt(i.weekly_deduction)}</td><td style="text-align:right">${payCell}</td><td style="text-align:right;color:var(--err)">${fmt(i.debt_balance)}</td></tr>`;
   });
   inner+='</tbody></table>';
@@ -535,9 +550,27 @@ function openLoanModal(loan){
  document.getElementById('loan_total_interest').value=isEdit?(loan.total_interest||''):'';
  document.getElementById('loan_no_early').checked=isEdit?(loan.allow_early_payoff===0):false;
  document.getElementById('loanDeleteBtn').style.display=isEdit?'block':'none';
+ // Populate refinance target dropdown with all OTHER active loans
+ const sel=document.getElementById('loan_refi_target');sel.innerHTML='';
+ loans.filter(x=>!isEdit||x.id!==loan.id).forEach(x=>{
+  const o=document.createElement('option');o.value=x.id;o.textContent=`${x.name} (dư nợ ~${fmt(x.total_payable||0)})`;
+  sel.appendChild(o);
+ });
+ if(isEdit&&loan.refinance_target_id)sel.value=loan.refinance_target_id;
+ onPurposeChange();
  onModeChange(isEdit?loan.schedule:null);
  updateLoanPreview();
  if(window.lucide) lucide.createIcons();
+}
+
+function onPurposeChange(){
+ const isRefi=document.getElementById('loan_purpose').value==='refinance';
+ const wrap=document.getElementById('refinanceTargetWrap');
+ const sel=document.getElementById('loan_refi_target');
+ wrap.style.display=isRefi?'block':'none';
+ if(isRefi&&!sel.options.length){
+  wrap.innerHTML='<div style="color:var(--err);font-size:11px">Cần có ít nhất 1 khoản vay khác để chọn làm mục tiêu đảo nợ.</div>';
+ }
 }
 
 function onModeChange(presetSchedule){
@@ -665,6 +698,8 @@ document.getElementById('loanForm').addEventListener('submit',async e=>{
   const sum=schedule.reduce((a,b)=>a+b,0);
   if(sum<principal){if(!confirm(`Tổng các kỳ (${fmt(sum)}) nhỏ hơn gốc (${fmt(principal)}). Vẫn lưu?`))return;}
  }
+ const purpose=document.getElementById('loan_purpose').value;
+ const refiSel=document.getElementById('loan_refi_target');
  const body={
   name:document.getElementById('loan_name').value,
   principal:principal,
@@ -673,7 +708,8 @@ document.getElementById('loanForm').addEventListener('submit',async e=>{
   start_date:document.getElementById('loan_start').value,
   payment_day:+document.getElementById('loan_payday').value,
   lender:document.getElementById('loan_lender').value,
-  purpose:document.getElementById('loan_purpose').value,
+  purpose:purpose,
+  refinance_target_id:purpose==='refinance'&&refiSel.value?+refiSel.value:null,
   color:document.getElementById('loan_color').value,
   payment_mode:mode,
   total_interest:+document.getElementById('loan_total_interest').value||0,
