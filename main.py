@@ -308,6 +308,11 @@ def list_loans(current_user):
         d['schedule'] = amounts
         d['total_payable'] = round(sum(amounts))
         d['monthly_payment'] = round(amounts[0]) if amounts else 0
+        # Baseline EMI = what user WOULD pay if no discount (rate% applied straight)
+        baseline = calc_emi(float(d['principal']), float(d['interest_rate']), int(d['term_months']))
+        d['baseline_monthly'] = round(baseline)
+        d['baseline_total'] = round(baseline * d['term_months'])
+        d['discount_total'] = max(0, d['baseline_total'] - d['total_payable'])
         try:
             sd = datetime.strptime(d['start_date'], '%Y-%m-%d')
             d['end_date'] = add_months(sd, d['term_months']).strftime('%Y-%m-%d')

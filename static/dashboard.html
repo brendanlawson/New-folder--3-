@@ -449,11 +449,19 @@ function renderLoans(){
   const sched=l.schedule||[];
   const minMax=sched.length?(()=>{const mn=Math.min(...sched),mx=Math.max(...sched);return mn===mx?fmt(mn):`${fmt(mn)}–${fmt(mx)}`;})():fmt(l.monthly_payment);
   const noEarly=l.allow_early_payoff===0?'<span title="Không cho tất toán sớm" style="color:var(--warn);margin-left:4px">🔒</span>':'';
+  // Strikethrough baseline if there's a discount (actual < baseline)
+  const hasDiscount=l.discount_total>0&&l.baseline_total>0&&(l.payment_mode==='fixed_total'||l.payment_mode==='custom_schedule');
+  const monthlyLine=hasDiscount
+   ?`<span style="color:var(--muted);text-decoration:line-through;font-weight:400">${fmt(l.baseline_monthly)}</span> → <strong style="color:var(--warn)">${minMax}/tháng</strong>`
+   :`<strong style="color:var(--warn)">${minMax}/tháng</strong>`;
+  const totalLine=hasDiscount
+   ?`Tổng phải trả: <span style="color:var(--muted);text-decoration:line-through">${fmt(l.baseline_total)}</span> → <strong style="color:var(--err)">${fmt(l.total_payable||0)}</strong> <span style="color:var(--ok);font-weight:600">(-${fmt(l.discount_total)})</span>`
+   :`Tổng phải trả: <strong style="color:var(--err)">${fmt(l.total_payable||0)}</strong>`;
   card.innerHTML=`
    <div class="lc-name">${purposeIcon}${l.name}${noEarly}<span class="lc-status" style="${closed?'background:rgba(120,123,134,.15);color:var(--muted)':''}">${closed?'Đã đóng':'Đang trả'}</span></div>
    <div class="lc-meta">${fmt(l.principal)} • ${modeLabel} • ${l.term_months} tháng</div>
-   <div class="lc-meta">Đóng ngày ${l.payment_day} • <strong style="color:var(--warn)">${minMax}/tháng</strong>${l.lender?' • '+l.lender:''}</div>
-   <div class="lc-meta" style="font-size:9px">Tổng phải trả: <strong style="color:var(--err)">${fmt(l.total_payable||0)}</strong></div>
+   <div class="lc-meta">Đóng ngày ${l.payment_day} • ${monthlyLine}${l.lender?' • '+l.lender:''}</div>
+   <div class="lc-meta" style="font-size:9px">${totalLine}</div>
    <div class="lc-bar"><div class="lc-bar-fill" style="width:${pct}%;background:${l.color}"></div></div>`;
   el.appendChild(card);
  });
@@ -494,24 +502,64 @@ function renderScheduleRows(preset){
  const n=+document.getElementById('loan_term').value||3;
  const wrap=document.getElementById('schedRows');wrap.innerHTML='';
  const principal=+document.getElementById('loan_principal').value||0;
+ const rate=+document.getElementById('loan_rate').value||0;
+ const baselineEmi=Math.round(calcMonthly(principal,rate,n));
+ // Header showing baseline EMI for reference
+ const hdr=document.createElement('div');
+ hdr.style.cssText='font-size:10px;color:var(--muted);background:rgba(41,98,255,.06);border:1px dashed var(--bdr);border-radius:6px;padding:6px 8px;margin-bottom:4px';
+ hdr.innerHTML=baselineEmi>0
+  ?`💡 EMI gốc theo lãi suất: <strong style="color:var(--txt)">${fmt(baselineEmi)}/kỳ</strong> — sửa kỳ nào có ưu đãi`
+  :`Nhập số tiền thực tế từng kỳ (ngân hàng đưa lịch trả khác nhau)`;
+ wrap.appendChild(hdr);
  for(let i=1;i<=n;i++){
   const row=document.createElement('div');
-  row.style.cssText='display:grid;grid-template-columns:60px 1fr;gap:8px;align-items:center';
-  const val=preset&&preset[i-1]?preset[i-1]:'';
-  row.innerHTML=`<span style="font-size:11px;color:var(--muted)">Kỳ ${i}</span><input type="number" class="fc sched-amt" data-idx="${i-1}" value="${val}" placeholder="${i===1?'VD: 944622':''}" oninput="updateSchedSum()">`;
+  row.style.cssText='display:grid;grid-template-columns:50px 1fr 90px;gap:8px;align-items:center';
+  // Pre-fill: use preset if exists, else baseline EMI
+  const val=preset&&preset[i-1]?preset[i-1]:(baselineEmi||'');
+  row.innerHTML=`<span style="font-size:11px;color:var(--muted)">Kỳ ${i}</span><input type="number" class="fc sched-amt" data-idx="${i-1}" value="${val}" oninput="updateSchedSum()"><span class="sched-diff" data-idx="${i-1}" style="font-size:10px;color:var(--muted);text-align:right"></span>`;
   wrap.appendChild(row);
  }
+ // Quick action: reset all to baseline
+ if(baselineEmi>0){
+  const act=document.createElement('div');
+  act.style.cssText='display:flex;gap:6px;margin-top:4px';
+  act.innerHTML=`<button type="button" class="btn-out" style="font-size:10px;padding:4px 8px;flex:1" onclick="fillSchedAll(${baselineEmi})">↺ Đặt tất cả = EMI gốc</button><button type="button" class="btn-out" style="font-size:10px;padding:4px 8px;flex:1" onclick="fillSchedAll(0)">✕ Xóa hết</button>`;
+  wrap.appendChild(act);
+ }
+ updateSchedSum();
+}
+
+function fillSchedAll(val){
+ document.querySelectorAll('#schedRows .sched-amt').forEach(i=>{i.value=val||'';});
  updateSchedSum();
 }
 
 function updateSchedSum(){
  const principal=+document.getElementById('loan_principal').value||0;
+ const rate=+document.getElementById('loan_rate').value||0;
+ const n=+document.getElementById('loan_term').value||3;
+ const baseline=Math.round(calcMonthly(principal,rate,n));
  const inputs=document.querySelectorAll('#schedRows .sched-amt');
  let sum=0;inputs.forEach(i=>{sum+=+i.value||0});
+ // Per-row diff vs baseline
+ inputs.forEach(i=>{
+  const v=+i.value||0;
+  const idx=i.dataset.idx;
+  const diffEl=document.querySelector(`#schedRows .sched-diff[data-idx="${idx}"]`);
+  if(!diffEl)return;
+  if(!v||!baseline){diffEl.innerHTML='';return;}
+  const d=v-baseline;
+  if(d===0){diffEl.innerHTML='<span style="color:var(--muted)">= EMI</span>';}
+  else if(d<0){diffEl.innerHTML=`<span style="color:var(--ok)">${fmt(d)}</span>`;}
+  else{diffEl.innerHTML=`<span style="color:var(--err)">+${fmt(d)}</span>`;}
+ });
  const interest=sum-principal;
+ const baselineTotal=baseline*n;
  const lbl=document.getElementById('schedSumLabel');
  if(!sum){lbl.textContent='';return;}
- lbl.innerHTML=`(Tổng: <strong>${fmt(sum)}</strong> = gốc ${fmt(principal)} + lãi ${fmt(interest)})`;
+ const discount=baselineTotal-sum;
+ const discountTxt=baselineTotal>0&&discount>0?` <span style="color:var(--ok)">— tiết kiệm ${fmt(discount)} so với EMI</span>`:'';
+ lbl.innerHTML=`(Tổng: <strong>${fmt(sum)}</strong> = gốc ${fmt(principal)} + lãi ${fmt(interest)}${discountTxt})`;
  lbl.style.color=interest>=0?'var(--ok)':'var(--err)';
  updateLoanPreview();
 }
