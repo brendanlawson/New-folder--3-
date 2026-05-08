@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="theme-color" content="#131722">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232962ff' stroke-width='2'><path d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'/></svg>">
 <title>Cashflow Intelligence</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -100,6 +104,31 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
 .bank-actions button{background:0;border:0;cursor:pointer;font-size:11px;padding:2px 4px}
 .bank-add{display:flex;gap:6px;margin-top:8px}
 .bank-add input{flex:1}
+.loan-card{background:var(--inp);border:1px solid var(--bdr);border-radius:8px;padding:10px;cursor:pointer;transition:.15s;border-left:3px solid var(--accent)}
+.loan-card:hover{border-color:var(--bdr2);transform:translateX(2px)}
+.loan-card .lc-name{font-weight:600;font-size:12px;color:#fff;display:flex;justify-content:space-between;align-items:center}
+.loan-card .lc-meta{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.5}
+.loan-card .lc-bar{height:4px;background:var(--bdr);border-radius:2px;margin-top:6px;overflow:hidden}
+.loan-card .lc-bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:.4s}
+.loan-card .lc-status{font-size:9px;text-transform:uppercase;letter-spacing:.5px;padding:1px 6px;border-radius:8px;background:rgba(8,153,129,.15);color:var(--ok)}
+.loan-card.closed{opacity:.5;border-left-color:var(--muted)}
+.upcoming-item{padding:8px 0;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between;gap:8px}
+.upcoming-item:last-child{border-bottom:0}
+.upcoming-item .ui-name{flex:1;min-width:0}
+.upcoming-item .ui-name strong{color:#fff;display:block;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.upcoming-item .ui-name span{font-size:10px;color:var(--muted)}
+.upcoming-item .ui-amt{text-align:right;font-size:11px;color:var(--err);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.upcoming-item .ui-amt span{display:block;font-size:9px;color:var(--muted);font-weight:400}
+.urgent{color:var(--warn) !important}
+.breakdown-row td{background:rgba(41,98,255,.04);padding:0 !important}
+.breakdown-inner{padding:8px 14px 10px}
+.breakdown-inner table{font-size:11px;min-width:auto}
+.breakdown-inner th{font-size:9px;background:transparent;padding:4px 8px}
+.breakdown-inner td{padding:5px 8px;border:0}
+.loan-pill{display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border-radius:8px;background:rgba(41,98,255,.15);font-size:10px;color:#fff;margin-right:3px}
+.loan-pill .lp-dot{width:6px;height:6px;border-radius:50%}
+.expand-btn{cursor:pointer;background:0;border:0;color:var(--muted);transition:transform .2s}
+.expand-btn.open{transform:rotate(90deg);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -110,6 +139,42 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
   <select class="sel" id="curSel" onchange="setCur(this.value)"><option value="VND">₫ VND</option><option value="USD">$ USD</option><option value="EUR">€ EUR</option></select>
   <span class="uname-btn" id="uName" onclick="openProfile()" style="display:flex;align-items:center;gap:4px"><i data-lucide="user" style="width:12px;height:12px"></i> <span></span></span>
   <button class="btn-out" onclick="logout()" style="display:flex;align-items:center;gap:4px"><i data-lucide="log-out" style="width:12px;height:12px"></i> <span data-i="t1">Đăng Xuất</span></button>
+ </div>
+</div>
+
+<!-- Loan Modal -->
+<div class="modal-overlay" id="loanModal" onclick="if(event.target===this)closeLoanModal()">
+ <div class="modal" style="position:relative;width:440px">
+  <button class="modal-close" onclick="closeLoanModal()">×</button>
+  <h2><i data-lucide="wallet-cards" style="width:20px;height:20px"></i> <span id="loanModalTitle">Thêm khoản vay</span></h2>
+  <form id="loanForm">
+   <input type="hidden" id="loan_id">
+   <div class="fg"><label class="fl">Tên khoản vay</label><input type="text" id="loan_name" class="fc" placeholder="VD: Vay mua xe" required></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="fg"><label class="fl">Số tiền vay</label><input type="number" id="loan_principal" class="fc" required></div>
+    <div class="fg"><label class="fl">Lãi suất / tháng (%)</label><input type="number" id="loan_rate" class="fc" step="0.01" value="0" required></div>
+   </div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="fg"><label class="fl">Kỳ hạn (tháng)</label>
+     <select id="loan_term" class="fc" style="appearance:auto"><option value="3">3 tháng</option><option value="6">6 tháng</option><option value="9">9 tháng</option><option value="12">12 tháng</option></select></div>
+    <div class="fg"><label class="fl">Ngày đóng hàng tháng</label><input type="number" id="loan_payday" class="fc" min="1" max="28" value="6" required></div>
+   </div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="fg"><label class="fl">Ngày bắt đầu</label><input type="date" id="loan_start" class="fc" required></div>
+    <div class="fg"><label class="fl">Bên cho vay</label><input type="text" id="loan_lender" class="fc" placeholder="VD: FE Credit"></div>
+   </div>
+   <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end">
+    <div class="fg" style="margin-bottom:0"><label class="fl">Mục đích</label>
+     <select id="loan_purpose" class="fc" style="appearance:auto">
+      <option value="purchase">Mua sắm / chi tiêu</option>
+      <option value="refinance">Đảo nợ (trả khoản vay khác)</option>
+     </select></div>
+    <div class="fg" style="margin-bottom:0"><label class="fl">Màu</label><input type="color" id="loan_color" class="fc" value="#2962ff" style="height:36px;padding:2px"></div>
+   </div>
+   <div id="loanPreview" style="background:var(--inp);border:1px solid var(--bdr);border-radius:8px;padding:10px;font-size:11px;color:var(--muted);margin:8px 0"></div>
+   <button type="submit" class="btn">Lưu</button>
+   <button type="button" class="btn btn-warn" id="loanDeleteBtn" onclick="deleteLoan()" style="display:none;margin-top:6px">Xóa khoản vay này</button>
+  </form>
  </div>
 </div>
 
@@ -138,19 +203,25 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
 <div class="wrap">
  <div class="sidebar">
   <div class="pnl">
-   <div class="pnl-h" style="display:flex;align-items:center;gap:6px"><i data-lucide="settings-2" style="width:14px;height:14px"></i> <span data-i="t2">Thiết Lập Khoản Vay</span></div>
+   <div class="pnl-h" style="display:flex;align-items:center;gap:6px"><i data-lucide="wallet-cards" style="width:14px;height:14px"></i> <span>Khoản Vay</span>
+    <span style="margin-left:auto;background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:10px" id="loanCount">0</span></div>
+   <div id="loanList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+   <button class="btn" onclick="openLoanModal()" style="margin-top:0"><i data-lucide="plus" style="width:12px;height:12px;vertical-align:-2px"></i> Thêm khoản vay</button>
+  </div>
+  <div class="pnl">
+   <div class="pnl-h" style="display:flex;align-items:center;gap:6px"><i data-lucide="settings-2" style="width:14px;height:14px"></i> <span>Thông Số Chung</span></div>
    <form id="setupForm">
-    <div class="fg"><label class="fl" data-i="t3">Số tiền vay</label><input type="number" id="s_principal" class="fc" value="3168048" required></div>
-    <div class="fg"><label class="fl" data-i="t4">Kỳ hạn</label>
-     <select id="s_term" class="fc" style="appearance:auto"><option value="3">3 tháng (12 tuần)</option><option value="6">6 tháng (24 tuần)</option><option value="9">9 tháng (36 tuần)</option><option value="12">12 tháng (48 tuần)</option></select></div>
-    <div class="fg"><label class="fl" data-i="t5">Lãi suất tháng (%)</label><input type="number" id="s_rate" class="fc" value="3.67" step="0.01" required></div>
     <div class="fg"><label class="fl" data-i="t6">Thu nhập TB / tuần</label><input type="number" id="s_income" class="fc" value="600000" required></div>
     <div class="fg"><label class="fl" data-i="t7">Chi phí cố định / tuần</label><input type="number" id="s_cost" class="fc" value="50000" required></div>
     <div class="fg"><label class="fl" data-i="t8">Quỹ dự phòng ban đầu</label><input type="number" id="s_reserve" class="fc" value="471001" required></div>
-    <div class="fg"><label class="fl" data-i="t12">Ngày bắt đầu</label><input type="date" id="s_date" class="fc" required></div>
     <button type="submit" class="btn" id="genBtn" data-i="t9">Tạo Lộ Trình</button>
    </form>
    <div style="margin-top:8px"><button class="btn btn-warn" onclick="importCSV()" style="font-size:10px;display:flex;align-items:center;justify-content:center;gap:6px"><i data-lucide="file-down" style="width:12px;height:12px"></i> <span data-i="t10">Nhập từ CSV gốc</span></button></div>
+  </div>
+  <div class="pnl">
+   <div class="pnl-h" style="display:flex;align-items:center;gap:6px"><i data-lucide="calendar-clock" style="width:14px;height:14px"></i> <span>Lịch Đóng Sắp Tới</span></div>
+   <div id="upcomingList" style="font-size:11px;line-height:1.6;max-height:220px;overflow-y:auto"></div>
+   <button class="btn" onclick="exportICS()" style="background:var(--inp);color:var(--txt);border:1px solid var(--bdr);margin-top:10px"><i data-lucide="calendar-plus" style="width:12px;height:12px;vertical-align:-2px"></i> Xuất Google Calendar (.ics)</button>
   </div>
   <div class="pnl">
    <div class="pnl-h dict-toggle" onclick="this.nextElementSibling.classList.toggle('open')"><div style="display:flex;align-items:center;gap:6px"><i data-lucide="book-open" style="width:14px;height:14px"></i> <span data-i="t11">Từ Điển Dòng Tiền</span></div><i data-lucide="chevron-down" style="width:14px;height:14px"></i></div>
@@ -197,7 +268,7 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
    <table><thead><tr>
     <th data-i="h0">Kỳ</th><th data-i="ha">Ngày</th><th data-i="h1">Thu Nhập</th><th data-i="h2">Cố Định</th><th data-i="h3">Trích Nợ</th>
     <th data-i="h4">Rút D.Phòng</th><th data-i="h5">Tiền Sống</th><th data-i="h6">Thanh Toán</th>
-    <th data-i="h7">Q.Dự Phòng</th><th data-i="h8">Quỹ Nợ</th><th data-i="h9">Hành Động</th>
+    <th data-i="h7">Q.Dự Phòng</th><th data-i="h8">Quỹ Nợ</th><th>Khoản đang chạy</th><th data-i="h9">Hành Động</th>
    </tr></thead><tbody id="tb"></tbody></table>
   </div>
  </div>
@@ -236,7 +307,7 @@ function tFS(id){const e=document.getElementById(id);if(!document.fullscreenElem
 let D=[],chart=null,editId=null;
 const H={Authorization:'Bearer '+T,'Content-Type':'application/json'};
 
-async function load(){try{const r=await fetch('/api/cashflows',{headers:H});if(r.status===401)return logout();D=await r.json();rCards();rTbl();rChart();loadHist();loadBanks();}catch(e){console.error(e);}}
+async function load(){try{const r=await fetch('/api/cashflows',{headers:H});if(r.status===401)return logout();D=await r.json();await loadLoans();rCards();rTbl();rChart();loadHist();loadBanks();}catch(e){console.error(e);}}
 
 function rCards(){if(!D.length)return;const last=D[D.length-1],wd=D.filter(d=>d.week_name!=='Số dư ban đầu');
 const ai=wd.length?wd.reduce((s,r)=>s+r.income,0)/wd.length:0;
@@ -247,7 +318,8 @@ document.querySelector('#sR span').textContent=fmt(last.reserve_balance);documen
 function rTbl(){const tb=document.getElementById('tb');tb.innerHTML='';
 const be=L[lang].be,bd=L[lang].bd;
 const fmtD=d=>d?new Date(d).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
-D.forEach(r=>{const tr=document.createElement('tr');const init=r.week_name==='Số dư ban đầu';
+D.forEach(r=>{const tr=document.createElement('tr');tr.dataset.cfid=r.id;const init=r.week_name==='Số dư ban đầu';
+const activePills=init?'—':loanPillsForWeek(r);
 if(editId===r.id){tr.innerHTML=`<td style="color:#fff">${r.week_name}</td><td style="color:var(--muted)">${fmtD(r.week_date)}</td>
 <td><input type="number" id="ei_${r.id}" class="ei" value="${r.income}"></td>
 <td><input type="number" id="eg_${r.id}" class="ei" value="${r.gas}"></td>
@@ -256,16 +328,43 @@ if(editId===r.id){tr.innerHTML=`<td style="color:#fff">${r.week_name}</td><td st
 <td class="c-mb" style="font-weight:600">—</td>
 <td><input type="number" id="ep_${r.id}" class="ei" value="${r.payment}"></td>
 <td class="c-gld" style="font-weight:600">—</td><td class="c-err" style="font-weight:600">—</td>
+<td>${activePills}</td>
 <td><button class="ab ab-s" title="Save" onclick="saveE(${r.id})"><i data-lucide="check"></i></button><button class="ab ab-c" title="Cancel" onclick="cancelE()"><i data-lucide="x"></i></button></td>`;}
-else{tr.innerHTML=`<td style="color:#fff">${r.week_name}</td><td style="color:var(--muted)">${fmtD(r.week_date)}</td>
+else{const expandBtn=init||loans.length<=1?'':`<button class="expand-btn" onclick="toggleBreakdown(${r.id},this)" title="Chi tiết theo khoản vay"><i data-lucide="chevron-right" style="width:14px;height:14px"></i></button>`;
+tr.innerHTML=`<td style="color:#fff">${expandBtn} ${r.week_name}</td><td style="color:var(--muted)">${fmtD(r.week_date)}</td>
 <td class="c-tp">${fmt(r.income)}</td><td class="c-err">${fmt(r.gas)}</td>
 <td class="c-err">${fmt(r.debt_deduction)}</td><td class="c-gld">${fmt(r.reserve_withdrawal)}</td>
 <td class="c-mb" style="font-weight:600">${fmt(r.spending)}</td><td class="c-sp">${fmt(r.payment)}</td>
 <td class="c-gld" style="font-weight:600">${fmt(r.reserve_balance)}</td>
 <td class="c-err" style="font-weight:600">${fmt(r.debt_balance)}</td>
+<td style="text-align:left">${activePills}</td>
 <td>${init?'':`<button class="ab ab-e" title="${be}" onclick="startE(${r.id})"><i data-lucide="edit-2"></i></button><button class="ab ab-d" title="${bd}" onclick="delR(${r.id})"><i data-lucide="trash-2"></i></button>`}</td>`;}
 tb.appendChild(tr);});
 if(window.lucide) lucide.createIcons();}
+
+function loanPillsForWeek(r){
+ if(!loans||!loans.length||!r.week_date)return '<span style="color:var(--muted)">—</span>';
+ const wd=new Date(r.week_date);const wdEnd=new Date(wd);wdEnd.setDate(wd.getDate()+6);
+ const active=loans.filter(l=>{
+  const s=new Date(l.start_date),e=new Date(l.end_date||l.start_date);
+  return s<=wdEnd && e>wd;
+ });
+ if(!active.length)return '<span style="color:var(--muted)">Không có</span>';
+ return active.map(l=>`<span class="loan-pill" title="${l.name}"><span class="lp-dot" style="background:${l.color}"></span>${l.name.length>10?l.name.slice(0,10)+'…':l.name}</span>`).join('');
+}
+
+async function toggleBreakdown(cfid,btn){
+ const tr=btn.closest('tr');const next=tr.nextElementSibling;
+ if(next&&next.classList.contains('breakdown-row')){next.remove();btn.classList.remove('open');return;}
+ btn.classList.add('open');
+ const r=await fetch('/api/cashflows/'+cfid+'/breakdown',{headers:H});
+ const items=await r.json();
+ const newTr=document.createElement('tr');newTr.className='breakdown-row';
+ const colspan=tr.children.length;
+ const inner=items.length?`<table style="width:100%"><thead><tr><th style="text-align:left">Khoản vay</th><th>Trích tuần</th><th>Trả góp</th><th>Dư nợ</th></tr></thead><tbody>${items.map(i=>`<tr><td style="text-align:left;color:#fff"><span class="lp-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${i.loan_color};margin-right:6px"></span>${i.loan_name}${i.lender?' <span style=\"color:var(--muted);font-size:10px\">('+i.lender+')</span>':''}</td><td style="text-align:right">${fmt(i.weekly_deduction)}</td><td style="text-align:right;color:${i.payment>0?'var(--warn)':'var(--muted)'}">${i.payment>0?fmt(i.payment):'—'}</td><td style="text-align:right;color:var(--err)">${fmt(i.debt_balance)}</td></tr>`).join('')}</tbody></table>`:'<div style="color:var(--muted);padding:6px">Không có khoản vay nào active trong tuần này.</div>';
+ newTr.innerHTML=`<td colspan="${colspan}"><div class="breakdown-inner">${inner}</div></td>`;
+ tr.after(newTr);
+}
 
 function startE(id){editId=id;rTbl();}
 function cancelE(){editId=null;rTbl();}
@@ -275,13 +374,15 @@ async function delR(id){if(!confirm('Xóa dòng này?'))return;await fetch('/api
 
 // Generate Plan
 document.getElementById('setupForm').addEventListener('submit',async e=>{e.preventDefault();
-if(D.length>1&&!confirm('Dữ liệu hiện tại sẽ bị xóa. Tiếp tục?'))return;
+if(!loans.length){alert('Hãy thêm ít nhất 1 khoản vay trước.');return;}
+if(D.length>1&&!confirm('Dữ liệu hiện tại sẽ bị xóa và tạo lại từ các khoản vay. Tiếp tục?'))return;
 const b=document.getElementById('genBtn');b.textContent='...';b.disabled=true;
-await fetch('/api/generate_plan',{method:'POST',headers:H,body:JSON.stringify({
-principal:+document.getElementById('s_principal').value,term:+document.getElementById('s_term').value,
-interest_rate:+document.getElementById('s_rate').value,weekly_income:+document.getElementById('s_income').value,
-fixed_cost:+document.getElementById('s_cost').value,init_reserve:+document.getElementById('s_reserve').value,
-start_date:document.getElementById('s_date').value})});
+const r=await fetch('/api/generate_plan',{method:'POST',headers:H,body:JSON.stringify({
+weekly_income:+document.getElementById('s_income').value,
+fixed_cost:+document.getElementById('s_cost').value,
+init_reserve:+document.getElementById('s_reserve').value,
+skip_legacy:1})});
+if(!r.ok){const err=await r.json();alert(err.detail||'Lỗi');}
 b.textContent=L[lang].t9;b.disabled=false;load();});
 
 async function importCSV(){if(!confirm('Nhập dữ liệu từ file CSV gốc? Dữ liệu hiện tại sẽ bị xóa.'))return;
@@ -307,8 +408,124 @@ data.forEach(h=>{const d=document.createElement('div');d.className='log-item';
 d.innerHTML=`<span class="log-time">${h.changed_at}</span> — <strong>${h.week_name}</strong><br><span class="log-field">${h.field}</span>: <span class="log-old">${fmt(h.old_value)}</span> → <span class="log-new">${fmt(h.new_value)}</span>`;
 hb.appendChild(d);});}catch(e){console.error(e);}}
 
-// Init: set default date to today
-document.getElementById('s_date').value=new Date().toISOString().split('T')[0];
+// --- Loans ---
+let loans=[];
+async function loadLoans(){
+ try{const r=await fetch('/api/loans',{headers:H});loans=await r.json();renderLoans();loadUpcoming();}catch(e){console.error(e);}
+}
+function renderLoans(){
+ const el=document.getElementById('loanList');el.innerHTML='';
+ document.getElementById('loanCount').textContent=loans.length;
+ if(!loans.length){el.innerHTML='<div style="color:var(--muted);font-size:11px;text-align:center;padding:14px 0">Chưa có khoản vay nào</div>';return;}
+ const today=new Date();
+ loans.forEach(l=>{
+  const sd=new Date(l.start_date),ed=new Date(l.end_date);
+  const total=ed-sd;const elapsed=Math.max(0,Math.min(total,today-sd));
+  const pct=total>0?Math.round(elapsed/total*100):0;
+  const closed=l.status==='closed'||today>ed;
+  const card=document.createElement('div');card.className='loan-card'+(closed?' closed':'');
+  card.style.borderLeftColor=l.color;
+  card.onclick=()=>openLoanModal(l);
+  const purposeIcon=l.purpose==='refinance'?'🔄 ':'';
+  card.innerHTML=`
+   <div class="lc-name">${purposeIcon}${l.name}<span class="lc-status" style="${closed?'background:rgba(120,123,134,.15);color:var(--muted)':''}">${closed?'Đã đóng':'Đang trả'}</span></div>
+   <div class="lc-meta">${fmt(l.principal)} • ${l.interest_rate}%/tháng • ${l.term_months} tháng</div>
+   <div class="lc-meta">Đóng ngày ${l.payment_day} • <strong style="color:var(--warn)">${fmt(l.monthly_payment)}/tháng</strong>${l.lender?' • '+l.lender:''}</div>
+   <div class="lc-bar"><div class="lc-bar-fill" style="width:${pct}%;background:${l.color}"></div></div>`;
+  el.appendChild(card);
+ });
+}
+
+function openLoanModal(loan){
+ document.getElementById('loanModal').classList.add('open');
+ const isEdit=!!loan;
+ document.getElementById('loanModalTitle').textContent=isEdit?'Sửa khoản vay':'Thêm khoản vay';
+ document.getElementById('loan_id').value=isEdit?loan.id:'';
+ document.getElementById('loan_name').value=isEdit?loan.name:'';
+ document.getElementById('loan_principal').value=isEdit?loan.principal:'';
+ document.getElementById('loan_rate').value=isEdit?loan.interest_rate:'0';
+ document.getElementById('loan_term').value=isEdit?loan.term_months:'3';
+ document.getElementById('loan_payday').value=isEdit?loan.payment_day:'6';
+ document.getElementById('loan_start').value=isEdit?loan.start_date:new Date().toISOString().split('T')[0];
+ document.getElementById('loan_lender').value=isEdit?(loan.lender||''):'';
+ document.getElementById('loan_purpose').value=isEdit?loan.purpose:'purchase';
+ document.getElementById('loan_color').value=isEdit?loan.color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+ document.getElementById('loanDeleteBtn').style.display=isEdit?'block':'none';
+ updateLoanPreview();
+ if(window.lucide) lucide.createIcons();
+}
+function closeLoanModal(){document.getElementById('loanModal').classList.remove('open');}
+
+function calcMonthly(p,r,n){if(n<=0)return 0;if(r>0){const x=r/100;return p*x*Math.pow(1+x,n)/(Math.pow(1+x,n)-1);}return p/n;}
+function updateLoanPreview(){
+ const p=+document.getElementById('loan_principal').value||0;
+ const r=+document.getElementById('loan_rate').value||0;
+ const n=+document.getElementById('loan_term').value||3;
+ const sd=document.getElementById('loan_start').value;
+ const pd=+document.getElementById('loan_payday').value||1;
+ if(!p||!sd){document.getElementById('loanPreview').textContent='Nhập đủ thông tin để xem trước.';return;}
+ const m=calcMonthly(p,r,n);const total=m*n;
+ const start=new Date(sd);const end=new Date(start);end.setMonth(end.getMonth()+n);
+ const fmtD=d=>d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',yyyy:'numeric'});
+ document.getElementById('loanPreview').innerHTML=`💰 Trả mỗi tháng: <strong style="color:var(--warn)">${fmt(m)}</strong> (vào ngày ${pd} hàng tháng)<br>📅 Từ ${start.toLocaleDateString('vi-VN')} → ${end.toLocaleDateString('vi-VN')}<br>📊 Tổng phải trả: <strong style="color:var(--err)">${fmt(total)}</strong> (lãi: ${fmt(total-p)})`;
+}
+['loan_principal','loan_rate','loan_term','loan_start','loan_payday'].forEach(id=>{
+ document.addEventListener('input',e=>{if(e.target.id===id)updateLoanPreview();});
+});
+
+document.getElementById('loanForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const id=document.getElementById('loan_id').value;
+ const body={
+  name:document.getElementById('loan_name').value,
+  principal:+document.getElementById('loan_principal').value,
+  interest_rate:+document.getElementById('loan_rate').value,
+  term_months:+document.getElementById('loan_term').value,
+  start_date:document.getElementById('loan_start').value,
+  payment_day:+document.getElementById('loan_payday').value,
+  lender:document.getElementById('loan_lender').value,
+  purpose:document.getElementById('loan_purpose').value,
+  color:document.getElementById('loan_color').value,
+ };
+ const url='/api/loans'+(id?'/'+id:'');
+ const method=id?'PUT':'POST';
+ const r=await fetch(url,{method,headers:H,body:JSON.stringify(body)});
+ if(r.ok){closeLoanModal();loadLoans();}
+ else{const e=await r.json();alert(e.detail||'Lỗi');}
+});
+
+async function deleteLoan(){
+ const id=document.getElementById('loan_id').value;
+ if(!id)return;
+ if(!confirm('Xóa khoản vay này? Lộ trình sẽ cần tạo lại.'))return;
+ await fetch('/api/loans/'+id,{method:'DELETE',headers:H});
+ closeLoanModal();loadLoans();
+}
+
+// --- Upcoming payments ---
+async function loadUpcoming(){
+ try{const r=await fetch('/api/loans/upcoming?days=90',{headers:H});const data=await r.json();
+  const el=document.getElementById('upcomingList');el.innerHTML='';
+  if(!data.length){el.innerHTML='<div style="color:var(--muted);text-align:center;padding:10px 0">Không có khoản nào đến hạn trong 90 ngày tới</div>';return;}
+  const today=new Date();today.setHours(0,0,0,0);
+  data.forEach(p=>{
+   const d=new Date(p.due_date);const days=Math.ceil((d-today)/86400000);
+   const urgent=days<=3;
+   const it=document.createElement('div');it.className='upcoming-item';
+   it.innerHTML=`<div class="ui-name"><strong>${p.loan_name}</strong><span>${d.toLocaleDateString('vi-VN')} ${urgent?'<span class="urgent">• còn '+days+' ngày</span>':'• còn '+days+' ngày'} • Kỳ ${p.installment}/${p.of_total}</span></div><div class="ui-amt ${urgent?'urgent':''}">${fmt(p.amount)}<span>${p.lender||''}</span></div>`;
+   el.appendChild(it);
+  });
+ }catch(e){console.error(e);}
+}
+
+async function exportICS(){
+ if(!loans.length){alert('Chưa có khoản vay nào');return;}
+ const r=await fetch('/api/loans/calendar.ics',{headers:H});
+ const blob=await r.blob();
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+ a.download='loans.ics';a.click();
+ setTimeout(()=>alert('Đã tải file .ics. Mở Google Calendar → Cài đặt → Nhập & Xuất → Chọn file để thêm tất cả lịch nhắc.'),300);
+}
 
 // --- Export Functions ---
 function getExportData(){
@@ -402,6 +619,11 @@ const newRole=prompt('Vai trò (income/spending/payment/reserve):',b.role);
 const newColor=prompt('Màu (hex):',b.color);
 fetch('/api/banks/'+id,{method:'PUT',headers:H,body:JSON.stringify({name:newName||b.name,role:newRole!==null?newRole:b.role,color:newColor||b.color,is_hidden:b.is_hidden})}).then(()=>loadBanks());}
 
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js');
+  });
+}
 </script>
 </body>
 </html>

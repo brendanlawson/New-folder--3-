@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import main; print\\('imports OK'\\)\")",
+      "Bash(python -c \"import main; print\\('OK'\\)\")"
+    ]
+  }
+}
