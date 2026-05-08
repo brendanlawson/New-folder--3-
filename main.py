@@ -772,32 +772,60 @@ def cashflow_breakdown(current_user, rid):
     return jsonify([dict(x) for x in items])
 
 # --- LOAD CSV (optional import) ---
+def _import_csv_rows(user_id, reader):
+    """Insert rows into cashflows for `user_id`. `reader` already past the header."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM cashflows WHERE user_id = ?", (user_id,))
+    count = 0
+    for row in reader:
+        if not row or not row[0].strip():
+            continue
+        cols = list(row) + [''] * max(0, 9 - len(row))
+        c.execute("""INSERT INTO cashflows (user_id, week_name, income, gas, debt_deduction, reserve_withdrawal, spending, payment, reserve_balance, debt_balance)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (user_id, cols[0],
+             float(cols[1]) if cols[1] else 0, float(cols[2]) if cols[2] else 0,
+             float(cols[3]) if cols[3] else 0, float(cols[4]) if cols[4] else 0,
+             float(cols[5]) if cols[5] else 0, float(cols[6]) if cols[6] else 0,
+             float(cols[7]) if cols[7] else 0, float(cols[8]) if cols[8] else 0))
+        count += 1
+    conn.commit()
+    conn.close()
+    return count
+
 @app.route('/api/import_csv', methods=['POST'])
 @require_auth
 def import_csv(current_user):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM cashflows WHERE user_id = ?", (current_user['id'],))
     csv_path = "Bang_Tinh_Dong_Tien.csv"
     if not os.path.exists(csv_path):
-        conn.close()
         return jsonify({"detail": "CSV file not found"}), 404
-    with open(csv_path, mode='r', encoding='utf-8') as f:
+    with open(csv_path, mode='r', encoding='utf-8-sig') as f:
         reader = csv.reader(f)
-        next(reader)
-        for row in reader:
-            if not row or not row[0].strip():
-                continue
-            c.execute("""INSERT INTO cashflows (user_id, week_name, income, gas, debt_deduction, reserve_withdrawal, spending, payment, reserve_balance, debt_balance)
-                VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (current_user['id'], row[0],
-                 float(row[1]) if row[1] else 0, float(row[2]) if row[2] else 0,
-                 float(row[3]) if row[3] else 0, float(row[4]) if row[4] else 0,
-                 float(row[5]) if row[5] else 0, float(row[6]) if row[6] else 0,
-                 float(row[7]) if row[7] else 0, float(row[8]) if row[8] else 0))
-    conn.commit()
-    conn.close()
-    return jsonify({"message": "CSV imported"})
+        next(reader, None)
+        n = _import_csv_rows(current_user['id'], reader)
+    return jsonify({"message": "CSV imported", "rows": n})
+
+@app.route('/api/import_csv_upload', methods=['POST'])
+@require_auth
+def import_csv_upload(current_user):
+    """Import from a CSV file uploaded by the user (multipart/form-data, field name 'file')."""
+    f = request.files.get('file')
+    if not f:
+        return jsonify({"detail": "No file uploaded"}), 400
+    try:
+        text = f.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return jsonify({"detail": "File must be UTF-8 encoded"}), 400
+    reader = csv.reader(text.splitlines())
+    next(reader, None)
+    try:
+        n = _import_csv_rows(current_user['id'], reader)
+    except (ValueError, IndexError) as e:
+        return jsonify({"detail": f"Invalid CSV format: {e}"}), 400
+    if n == 0:
+        return jsonify({"detail": "No valid rows found"}), 400
+    return jsonify({"message": "CSV imported", "rows": n})
 
 # --- HISTORY ---
 @app.route('/api/history', methods=['GET'])

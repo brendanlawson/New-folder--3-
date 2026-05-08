@@ -45,11 +45,22 @@ body{background:var(--bg);color:var(--txt);font-size:13px;overflow:hidden;height
 .card:hover::before{opacity:1}
 .card .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
 .card .val{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
-.cbox{background:var(--card);border:1px solid var(--bdr);border-radius:12px;padding:16px;height:260px;position:relative}
-.tbox{background:var(--card);border:1px solid var(--bdr);border-radius:12px;flex-grow:1;overflow:auto;position:relative}
-.cbox:fullscreen,.tbox:fullscreen{height:100vh;width:100vw;padding:30px;border-radius:0;background:var(--bg)}
-.exp{position:absolute;top:10px;right:10px;background:rgba(59,130,246,.1);border:1px solid var(--bdr);border-radius:6px;color:var(--muted);padding:3px 7px;cursor:pointer;font-size:10px;font-family:inherit;z-index:20;transition:.2s}
-.exp:hover{color:#fff;border-color:var(--accent)}
+.cbox{background:var(--card);border:1px solid var(--bdr);border-radius:12px;height:300px;position:relative;display:flex;flex-direction:column;overflow:hidden}
+.tbox{background:var(--card);border:1px solid var(--bdr);border-radius:12px;flex-grow:1;position:relative;display:flex;flex-direction:column;overflow:hidden}
+.cbox:fullscreen,.tbox:fullscreen{height:100vh;width:100vw;border-radius:0;background:var(--bg)}
+.cbox:fullscreen .box-body,.tbox:fullscreen .box-body{padding:20px}
+.box-toolbar{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--bdr);background:rgba(10,14,26,.55);flex-shrink:0;gap:12px}
+.bt-title{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--txt);text-transform:uppercase;letter-spacing:.7px}
+.bt-title i{width:13px;height:13px;color:var(--accent)}
+.bt-badge{font-size:10px;font-weight:500;color:var(--muted);background:var(--inp);border:1px solid var(--bdr);border-radius:10px;padding:1px 8px;letter-spacing:0;text-transform:none}
+.bt-actions{display:flex;align-items:center;gap:4px}
+.tb-btn{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--muted);padding:5px 8px;cursor:pointer;font-family:inherit;font-size:11px;display:inline-flex;align-items:center;gap:4px;transition:.15s}
+.tb-btn:hover{color:#fff;border-color:var(--bdr2);background:var(--inp)}
+.tb-btn i{width:13px;height:13px}
+.tb-sep{width:1px;height:14px;background:var(--bdr);margin:0 2px}
+.box-body{flex:1;min-height:0;position:relative;padding:14px 16px}
+.tbox .box-body{padding:0;overflow:auto}
+.cbox .box-body canvas{width:100%!important;height:100%!important}
 table{width:100%;border-collapse:collapse;font-size:12px;min-width:850px}
 th{background:rgba(10,14,26,.8);color:var(--muted);text-align:right;padding:10px 14px;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:10}
 th:first-child,td:first-child{text-align:left}
@@ -239,7 +250,11 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
     <div class="fg"><label class="fl" data-i="t8">Quỹ dự phòng ban đầu</label><input type="number" id="s_reserve" class="fc" value="471001" required></div>
     <button type="submit" class="btn" id="genBtn" data-i="t9">Tạo Lộ Trình</button>
    </form>
-   <div style="margin-top:8px"><button class="btn btn-warn" onclick="importCSV()" style="font-size:10px;display:flex;align-items:center;justify-content:center;gap:6px"><i data-lucide="file-down" style="width:12px;height:12px"></i> <span data-i="t10">Nhập từ CSV gốc</span></button></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+    <button class="btn btn-warn" onclick="importCSV()" style="margin-top:0;font-size:10px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px 6px"><i data-lucide="database" style="width:12px;height:12px"></i> <span data-i="t10">CSV gốc</span></button>
+    <button class="btn" onclick="document.getElementById('csvFileInput').click()" style="margin-top:0;font-size:10px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px 6px;background:var(--inp);color:var(--txt);border:1px solid var(--bdr2)"><i data-lucide="upload-cloud" style="width:12px;height:12px"></i> <span data-i="t10b">Import file CSV</span></button>
+   </div>
+   <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSVFile(this)">
   </div>
   <div class="pnl">
    <div class="pnl-h" style="display:flex;align-items:center;gap:6px"><i data-lucide="calendar-clock" style="width:14px;height:14px"></i> <span>Lịch Đóng Sắp Tới</span></div>
@@ -280,19 +295,33 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
    <div class="card"><div class="lbl" data-i="c3">Dự Phòng Hiện Tại</div><div class="val c-gld" id="sR" style="display:flex;align-items:center;gap:4px"><i data-lucide="shield-check" style="width:18px;height:18px"></i> <span>--</span></div></div>
    <div class="card"><div class="lbl" data-i="c4">Nợ Còn Lại</div><div class="val c-err" id="sD" style="display:flex;align-items:center;gap:4px"><i data-lucide="trending-down" style="width:18px;height:18px"></i> <span>--</span></div></div>
   </div>
-  <div class="cbox" id="cBox"><button class="exp" onclick="tFS('cBox')"><i data-lucide="maximize" style="width:12px;height:12px"></i></button><canvas id="chart"></canvas></div>
-  <div class="export-bar">
-   <span style="font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.5px" data-i="t14">Xuất dữ liệu:</span>
-   <button class="export-btn" onclick="exportCSV()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>CSV</button>
-   <button class="export-btn" onclick="exportExcel()"><i data-lucide="table" style="width:14px;height:14px"></i> Excel</button>
-   <button class="export-btn" onclick="exportPDF()"><i data-lucide="file-text" style="width:14px;height:14px"></i> PDF</button>
+  <div class="cbox" id="cBox">
+   <div class="box-toolbar">
+    <div class="bt-title"><i data-lucide="line-chart"></i><span>Cashflow Chart</span><span class="bt-badge" id="chartBadge">0 kỳ</span></div>
+    <div class="bt-actions">
+     <button class="tb-btn" id="cBoxFsBtn" onclick="tFS('cBox')" title="Toàn màn hình"><i data-lucide="maximize-2"></i></button>
+    </div>
+   </div>
+   <div class="box-body"><canvas id="chart"></canvas></div>
   </div>
-  <div class="tbox" id="tBox"><button class="exp" onclick="tFS('tBox')"><i data-lucide="maximize" style="width:12px;height:12px"></i></button>
+  <div class="tbox" id="tBox">
+   <div class="box-toolbar">
+    <div class="bt-title"><i data-lucide="table-2"></i><span>Cashflow Log</span><span class="bt-badge" id="tableBadge">0 dòng</span></div>
+    <div class="bt-actions">
+     <button class="tb-btn" onclick="exportCSV()" title="Xuất CSV"><i data-lucide="file-down"></i><span>CSV</span></button>
+     <button class="tb-btn" onclick="exportExcel()" title="Xuất Excel"><i data-lucide="sheet"></i><span>Excel</span></button>
+     <button class="tb-btn" onclick="exportPDF()" title="Xuất PDF"><i data-lucide="file-text"></i><span>PDF</span></button>
+     <span class="tb-sep"></span>
+     <button class="tb-btn" id="tBoxFsBtn" onclick="tFS('tBox')" title="Toàn màn hình"><i data-lucide="maximize-2"></i></button>
+    </div>
+   </div>
+   <div class="box-body">
    <table><thead><tr>
     <th data-i="h0">Kỳ</th><th data-i="ha">Ngày</th><th data-i="h1">Thu Nhập</th><th data-i="h2">Cố Định</th><th data-i="h3">Trích Nợ</th>
     <th data-i="h4">Rút D.Phòng</th><th data-i="h5">Tiền Sống</th><th data-i="h6">Thanh Toán</th>
     <th data-i="h7">Q.Dự Phòng</th><th data-i="h8">Quỹ Nợ</th><th>Khoản đang chạy</th><th data-i="h9">Hành Động</th>
    </tr></thead><tbody id="tb"></tbody></table>
+   </div>
   </div>
  </div>
 </div>
@@ -303,13 +332,13 @@ document.querySelector('#uName span').textContent=U;
 function logout(){localStorage.clear();location.href='/';}
 
 // i18n
-const L={vi:{t0:'Quản Lý Dòng Tiền',t1:'Đăng Xuất',t2:'Thiết Lập Khoản Vay',t3:'Số tiền vay',t4:'Kỳ hạn',t5:'Lãi suất tháng (%)',t6:'Thu nhập TB / tuần',t7:'Chi phí cố định / tuần',t8:'Quỹ dự phòng ban đầu',t9:'Tạo Lộ Trình',t10:'Nhập từ CSV gốc',t11:'Từ Điển Dòng Tiền',t12:'Ngày bắt đầu',t13:'Lịch Sử Thay Đổi',
+const L={vi:{t0:'Quản Lý Dòng Tiền',t1:'Đăng Xuất',t2:'Thiết Lập Khoản Vay',t3:'Số tiền vay',t4:'Kỳ hạn',t5:'Lãi suất tháng (%)',t6:'Thu nhập TB / tuần',t7:'Chi phí cố định / tuần',t8:'Quỹ dự phòng ban đầu',t9:'Tạo Lộ Trình',t10:'CSV gốc',t10b:'Import file CSV',t11:'Từ Điển Dòng Tiền',t12:'Ngày bắt đầu',t13:'Lịch Sử Thay Đổi',
 d1:'Thu nhập:',d1d:'Nguồn thu chính (TP Bank).',d2:'Tiền Sống:',d2d:'Tiền có sẵn để tiêu (MB Bank).',d3:'Trích Nợ & Xăng:',d3d:'Chi phí bắt buộc.',d4:'Quỹ Dự Phòng:',d4d:'Khiên bảo vệ tài chính.',
 c1:'TB Thu Nhập',c2:'TB Tiền Sống',c3:'Dự Phòng Hiện Tại',c4:'Nợ Còn Lại',
 h0:'Kỳ',ha:'Ngày',h1:'Thu Nhập',h2:'Cố Định',h3:'Trích Nợ',h4:'Rút D.Phòng',h5:'Tiền Sống',h6:'Thanh Toán',h7:'Q.Dự Phòng',h8:'Quỹ Nợ',h9:'Hành Động',
 be:'SỬA',bd:'XÓA',t14:'Xuất dữ liệu:',t15:'Ngân Hàng',t16:'Hiện ẩn',
 p0:'Hồ Sơ Cá Nhân',p1:'Tuần theo dõi',p2:'Lần chỉnh sửa',p3:'Ngày tham gia',p4:'Trạng thái',p5:'Đổi Mật Khẩu',p6:'Mật khẩu hiện tại',p7:'Mật khẩu mới',p8:'Cập Nhật'},
-en:{t0:'Cashflow Intelligence',t1:'Log Off',t2:'Loan Setup',t3:'Principal',t4:'Term',t5:'Monthly Rate (%)',t6:'Avg Weekly Income',t7:'Fixed Cost / Week',t8:'Initial Reserve',t9:'Generate Plan',t10:'Import from CSV',t11:'Cashflow Dictionary',t12:'Start Date',t13:'Change History',
+en:{t0:'Cashflow Intelligence',t1:'Log Off',t2:'Loan Setup',t3:'Principal',t4:'Term',t5:'Monthly Rate (%)',t6:'Avg Weekly Income',t7:'Fixed Cost / Week',t8:'Initial Reserve',t9:'Generate Plan',t10:'Server CSV',t10b:'Import CSV file',t11:'Cashflow Dictionary',t12:'Start Date',t13:'Change History',
 d1:'Income:',d1d:'Primary inflow (TP Bank).',d2:'Spending:',d2d:'Liquid cash (MB Bank).',d3:'Debt & Fixed:',d3d:'Mandatory outflows.',d4:'Reserve:',d4d:'Financial safety shield.',
 c1:'Avg Income',c2:'Avg Spending',c3:'Current Reserve',c4:'Remaining Debt',
 h0:'Period',ha:'Date',h1:'Income',h2:'Fixed Cost',h3:'Debt Ded.',h4:'Res. Withd.',h5:'Spending',h6:'Payment',h7:'Reserve',h8:'Debt Bal',h9:'Action',
@@ -339,6 +368,7 @@ document.querySelector('#sI span').textContent=fmt(ai);document.querySelector('#
 document.querySelector('#sR span').textContent=fmt(last.reserve_balance);document.querySelector('#sD span').textContent=fmt(last.debt_balance);}
 
 function rTbl(){const tb=document.getElementById('tb');tb.innerHTML='';
+const tbBadge=document.getElementById('tableBadge');if(tbBadge)tbBadge.textContent=D.length+' dòng';
 const be=L[lang].be,bd=L[lang].bd;
 const fmtD=d=>d?new Date(d).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
 D.forEach(r=>{const tr=document.createElement('tr');tr.dataset.cfid=r.id;const init=r.week_name==='Số dư ban đầu';
@@ -468,12 +498,28 @@ skip_legacy:1})});
 if(!r.ok){const err=await r.json();alert(err.detail||'Lỗi');}
 b.textContent=L[lang].t9;b.disabled=false;load();});
 
-async function importCSV(){if(!confirm('Nhập dữ liệu từ file CSV gốc? Dữ liệu hiện tại sẽ bị xóa.'))return;
+async function importCSV(){if(!confirm('Nhập dữ liệu từ file CSV gốc trên server? Dữ liệu hiện tại sẽ bị xóa.'))return;
 await fetch('/api/import_csv',{method:'POST',headers:H});load();}
+
+async function importCSVFile(input){
+ const f=input.files&&input.files[0];if(!f)return;
+ if(!confirm(`Import dữ liệu từ file "${f.name}"? Dữ liệu hiện tại sẽ bị xóa.`)){input.value='';return;}
+ const fd=new FormData();fd.append('file',f);
+ try{
+  const r=await fetch('/api/import_csv_upload',{method:'POST',headers:{Authorization:'Bearer '+T},body:fd});
+  const d=await r.json();
+  if(!r.ok){alert('Lỗi: '+(d.detail||'Không thể import'));return;}
+  alert(`✓ Đã import ${d.rows} dòng từ ${f.name}`);
+  load();
+ }catch(e){alert('Lỗi mạng: '+e.message);}
+ finally{input.value='';}
+}
 
 // Chart
 function rChart(){if(!D.length)return;const ctx=document.getElementById('chart').getContext('2d');
-const cd=D.filter(d=>d.week_name!=='Số dư ban đầu'),lb=cd.map(d=>{const dt=d.week_date?new Date(d.week_date).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}):'';return d.week_name+(dt?' ('+dt+')':'');});
+const cd=D.filter(d=>d.week_name!=='Số dư ban đầu');
+const cBadge=document.getElementById('chartBadge');if(cBadge)cBadge.textContent=cd.length+' kỳ';
+const lb=cd.map(d=>{const dt=d.week_date?new Date(d.week_date).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}):'';return d.week_name+(dt?' ('+dt+')':'');});
 if(chart)chart.destroy();Chart.defaults.color='#7b8ca8';Chart.defaults.font.family='Inter';
 chart=new Chart(ctx,{type:'bar',data:{labels:lb,datasets:[
 {label:L[lang].h5,data:cd.map(d=>d.spending*xr),backgroundColor:'rgba(59,130,246,.6)',borderColor:'#3b82f6',borderWidth:1,borderRadius:3,order:3},
