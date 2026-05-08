@@ -49,8 +49,25 @@ def init_db():
         color TEXT DEFAULT '#2962ff',
         status TEXT DEFAULT 'active',
         notify_email INTEGER DEFAULT 1,
+        payment_mode TEXT DEFAULT 'emi',
+        total_interest REAL DEFAULT 0,
+        allow_early_payoff INTEGER DEFAULT 1,
         created_at TEXT,
         FOREIGN KEY (user_id) REFERENCES users(id))""")
+    # Migrations for older DBs
+    cols = {r[1] for r in c.execute("PRAGMA table_info(loans)").fetchall()}
+    for col, ddl in [('payment_mode', "ALTER TABLE loans ADD COLUMN payment_mode TEXT DEFAULT 'emi'"),
+                     ('total_interest', "ALTER TABLE loans ADD COLUMN total_interest REAL DEFAULT 0"),
+                     ('allow_early_payoff', "ALTER TABLE loans ADD COLUMN allow_early_payoff INTEGER DEFAULT 1")]:
+        if col not in cols:
+            c.execute(ddl)
+    c.execute("""CREATE TABLE IF NOT EXISTS loan_schedule (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL,
+        installment_no INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        due_date TEXT,
+        FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE)""")
     c.execute("""CREATE TABLE IF NOT EXISTS cashflow_loan_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         cashflow_id INTEGER NOT NULL,
@@ -234,14 +251,37 @@ def delete_cashflow(current_user, rid):
     return jsonify({"message": "Deleted"})
 
 # --- LOAN HELPERS ---
-def calc_monthly_payment(principal, rate_pct, term_months):
-    """EMI calculation, rate is monthly % (e.g., 3.67 means 3.67%/month)."""
+def calc_emi(principal, rate_pct, term_months):
     if term_months <= 0:
         return 0.0
     if rate_pct > 0:
         r = rate_pct / 100.0
         return principal * r * ((1+r)**term_months) / (((1+r)**term_months) - 1)
     return principal / term_months
+
+def loan_schedule_amounts(conn, loan):
+    """Return list of length term_months with amount due for each installment."""
+    n = loan['term_months']
+    mode = loan['payment_mode'] if 'payment_mode' in loan.keys() else 'emi'
+    if mode == 'custom_schedule':
+        rows = conn.execute(
+            "SELECT installment_no, amount FROM loan_schedule WHERE loan_id=? ORDER BY installment_no",
+            (loan['id'],)).fetchall()
+        amounts = [0.0] * n
+        for r in rows:
+            if 1 <= r['installment_no'] <= n:
+                amounts[r['installment_no']-1] = float(r['amount'])
+        return amounts
+    if mode == 'fixed_total':
+        total_interest = float(loan['total_interest'] or 0)
+        per = (float(loan['principal']) + total_interest) / n
+        return [per] * n
+    # default 'emi'
+    return [calc_emi(float(loan['principal']), float(loan['interest_rate']), n)] * n
+
+def calc_monthly_payment(principal, rate_pct, term_months):
+    """Legacy helper kept for backward-compat callers (returns single EMI value)."""
+    return calc_emi(principal, rate_pct, term_months)
 
 def add_months(dt, months):
     """Add N months to a date, clamping day to month-end if needed."""
@@ -261,19 +301,30 @@ def list_loans(current_user):
     conn = get_db()
     rows = conn.execute("SELECT * FROM loans WHERE user_id = ? ORDER BY start_date ASC, id ASC",
                         (current_user['id'],)).fetchall()
-    conn.close()
     out = []
     for r in rows:
         d = dict(r)
-        d['monthly_payment'] = round(calc_monthly_payment(d['principal'], d['interest_rate'], d['term_months']))
-        # end date = start + term months
+        amounts = loan_schedule_amounts(conn, r)
+        d['schedule'] = amounts
+        d['total_payable'] = round(sum(amounts))
+        d['monthly_payment'] = round(amounts[0]) if amounts else 0
         try:
             sd = datetime.strptime(d['start_date'], '%Y-%m-%d')
             d['end_date'] = add_months(sd, d['term_months']).strftime('%Y-%m-%d')
         except Exception:
             d['end_date'] = None
         out.append(d)
+    conn.close()
     return jsonify(out)
+
+def _save_schedule(c, loan_id, term, schedule):
+    """Replace loan_schedule rows for this loan."""
+    c.execute("DELETE FROM loan_schedule WHERE loan_id=?", (loan_id,))
+    if not schedule:
+        return
+    for i, amt in enumerate(schedule[:term], start=1):
+        c.execute("INSERT INTO loan_schedule (loan_id, installment_no, amount) VALUES (?,?,?)",
+                  (loan_id, i, float(amt or 0)))
 
 @app.route('/api/loans', methods=['POST'])
 @require_auth
@@ -283,28 +334,37 @@ def create_loan(current_user):
     principal = float(data.get('principal', 0))
     rate = float(data.get('interest_rate', 0))
     term = int(data.get('term_months', 3))
-    if term not in (3, 6, 9, 12) and term <= 0:
+    if term <= 0:
         return jsonify({"detail": "term_months must be > 0"}), 400
     start_date = data.get('start_date', datetime.now().strftime('%Y-%m-%d'))
     payment_day = int(data.get('payment_day', 1))
     if payment_day < 1 or payment_day > 28:
         return jsonify({"detail": "payment_day must be 1..28"}), 400
     lender = data.get('lender', '')
-    purpose = data.get('purpose', 'purchase')  # 'purchase' | 'refinance'
+    purpose = data.get('purpose', 'purchase')
     refinance_target_id = data.get('refinance_target_id')
     color = data.get('color', '#2962ff')
     notify = int(data.get('notify_email', 1))
+    payment_mode = data.get('payment_mode', 'emi')  # 'emi' | 'fixed_total' | 'custom_schedule'
+    if payment_mode not in ('emi', 'fixed_total', 'custom_schedule'):
+        return jsonify({"detail": "invalid payment_mode"}), 400
+    total_interest = float(data.get('total_interest', 0) or 0)
+    allow_early = int(data.get('allow_early_payoff', 1))
+    schedule = data.get('schedule') or []
 
     conn = get_db()
     c = conn.cursor()
     c.execute("""INSERT INTO loans (user_id, name, principal, interest_rate, term_months,
                  start_date, payment_day, lender, purpose, refinance_target_id, color,
-                 status, notify_email, created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 status, notify_email, payment_mode, total_interest, allow_early_payoff, created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               (current_user['id'], name, principal, rate, term, start_date, payment_day,
                lender, purpose, refinance_target_id, color, 'active', notify,
+               payment_mode, total_interest, allow_early,
                datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
     new_id = c.lastrowid
+    if payment_mode == 'custom_schedule':
+        _save_schedule(c, new_id, term, schedule)
     conn.commit()
     conn.close()
     return jsonify({"message": "Loan created", "id": new_id})
@@ -320,15 +380,23 @@ def update_loan(current_user, lid):
         conn.close()
         return jsonify({"detail": "Not found"}), 404
     fields = ['name', 'principal', 'interest_rate', 'term_months', 'start_date',
-              'payment_day', 'lender', 'purpose', 'color', 'status', 'notify_email']
+              'payment_day', 'lender', 'purpose', 'color', 'status', 'notify_email',
+              'payment_mode', 'total_interest', 'allow_early_payoff']
     updates = {f: data.get(f, loan[f]) for f in fields}
-    conn.execute("""UPDATE loans SET name=?, principal=?, interest_rate=?, term_months=?,
-                    start_date=?, payment_day=?, lender=?, purpose=?, color=?, status=?,
-                    notify_email=? WHERE id=?""",
-                 (updates['name'], float(updates['principal']), float(updates['interest_rate']),
-                  int(updates['term_months']), updates['start_date'], int(updates['payment_day']),
-                  updates['lender'], updates['purpose'], updates['color'], updates['status'],
-                  int(updates['notify_email']), lid))
+    if updates['payment_mode'] not in ('emi', 'fixed_total', 'custom_schedule'):
+        conn.close()
+        return jsonify({"detail": "invalid payment_mode"}), 400
+    c = conn.cursor()
+    c.execute("""UPDATE loans SET name=?, principal=?, interest_rate=?, term_months=?,
+                 start_date=?, payment_day=?, lender=?, purpose=?, color=?, status=?,
+                 notify_email=?, payment_mode=?, total_interest=?, allow_early_payoff=? WHERE id=?""",
+              (updates['name'], float(updates['principal']), float(updates['interest_rate']),
+               int(updates['term_months']), updates['start_date'], int(updates['payment_day']),
+               updates['lender'], updates['purpose'], updates['color'], updates['status'],
+               int(updates['notify_email']), updates['payment_mode'],
+               float(updates['total_interest'] or 0), int(updates['allow_early_payoff']), lid))
+    if updates['payment_mode'] == 'custom_schedule' and 'schedule' in data:
+        _save_schedule(c, lid, int(updates['term_months']), data.get('schedule') or [])
     conn.commit()
     conn.close()
     return jsonify({"message": "Loan updated"})
@@ -355,27 +423,30 @@ def upcoming_payments(current_user):
     today = datetime.now().date()
     horizon = today + timedelta(days=days_ahead)
     out = []
-    for loan in loans:
-        sd = datetime.strptime(loan['start_date'], '%Y-%m-%d').date()
-        monthly = calc_monthly_payment(loan['principal'], loan['interest_rate'], loan['term_months'])
-        for k in range(1, loan['term_months'] + 1):
-            # k-th payment due: start_date + k months, on payment_day of that month
-            ref = add_months(datetime.combine(sd, datetime.min.time()), k).date()
-            try:
-                due = ref.replace(day=loan['payment_day'])
-            except ValueError:
-                due = ref
-            if due < today or due > horizon:
-                continue
-            out.append({
-                "loan_id": loan['id'],
-                "loan_name": loan['name'],
-                "lender": loan['lender'],
-                "due_date": due.strftime('%Y-%m-%d'),
-                "amount": round(monthly),
-                "installment": k,
-                "of_total": loan['term_months']
-            })
+    conn2 = get_db()
+    try:
+        for loan in loans:
+            sd = datetime.strptime(loan['start_date'], '%Y-%m-%d').date()
+            amounts = loan_schedule_amounts(conn2, loan)
+            for k in range(1, loan['term_months'] + 1):
+                ref = add_months(datetime.combine(sd, datetime.min.time()), k).date()
+                try:
+                    due = ref.replace(day=loan['payment_day'])
+                except ValueError:
+                    due = ref
+                if due < today or due > horizon:
+                    continue
+                out.append({
+                    "loan_id": loan['id'],
+                    "loan_name": loan['name'],
+                    "lender": loan['lender'],
+                    "due_date": due.strftime('%Y-%m-%d'),
+                    "amount": round(amounts[k-1] if k-1 < len(amounts) else 0),
+                    "installment": k,
+                    "of_total": loan['term_months']
+                })
+    finally:
+        conn2.close()
     out.sort(key=lambda x: x['due_date'])
     return jsonify(out)
 
@@ -388,19 +459,21 @@ def loans_ics(current_user):
                          (current_user['id'],)).fetchall()
     conn.close()
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Cashflow//Loans//VI"]
+    conn2 = get_db()
     for loan in loans:
         sd = datetime.strptime(loan['start_date'], '%Y-%m-%d').date()
-        monthly = round(calc_monthly_payment(loan['principal'], loan['interest_rate'], loan['term_months']))
+        amounts = loan_schedule_amounts(conn2, loan)
         for k in range(1, loan['term_months'] + 1):
             ref = add_months(datetime.combine(sd, datetime.min.time()), k).date()
             try:
                 due = ref.replace(day=loan['payment_day'])
             except ValueError:
                 due = ref
+            amt = round(amounts[k-1] if k-1 < len(amounts) else 0)
             uid = f"loan-{loan['id']}-inst-{k}@cashflow"
             dt = due.strftime('%Y%m%d')
-            summary = f"Đóng {loan['name']} ({k}/{loan['term_months']}) - {monthly:,}đ"
-            desc = f"Khoản vay: {loan['name']} | Bên cho vay: {loan['lender']} | Số tiền: {monthly:,}đ"
+            summary = f"Đóng {loan['name']} ({k}/{loan['term_months']}) - {amt:,}đ"
+            desc = f"Khoản vay: {loan['name']} | Bên cho vay: {loan['lender']} | Số tiền: {amt:,}đ"
             lines += [
                 "BEGIN:VEVENT",
                 f"UID:{uid}",
@@ -412,6 +485,7 @@ def loans_ics(current_user):
                 f"DESCRIPTION:Còn 2 ngày: {summary}", "END:VALARM",
                 "END:VEVENT",
             ]
+    conn2.close()
     lines.append("END:VCALENDAR")
     body = "\r\n".join(lines)
     return body, 200, {
@@ -480,9 +554,10 @@ def generate_plan(current_user):
     loan_params = []
     for l in loans:
         sd = datetime.strptime(l['start_date'], '%Y-%m-%d')
-        monthly = calc_monthly_payment(l['principal'], l['interest_rate'], l['term_months'])
+        amounts = loan_schedule_amounts(conn, l)
+        total_payable = sum(amounts)
+        avg_weekly_ded = total_payable / (l['term_months'] * 4.0)
         end_dt = add_months(sd, l['term_months'])
-        # Compute payment due dates (date when payment is due)
         due_dates = []
         for k in range(1, l['term_months'] + 1):
             ref = add_months(sd, k)
@@ -493,7 +568,9 @@ def generate_plan(current_user):
             due_dates.append(due.date())
         loan_params.append({
             'loan': l, 'start': sd, 'end': end_dt,
-            'monthly': monthly, 'weekly_ded': monthly / 4.0,
+            'amounts': amounts,
+            'total_payable': total_payable,
+            'weekly_ded': avg_weekly_ded,
             'due_dates': due_dates,
             'remaining_balance': 0.0,
             'paid_count': 0,
@@ -528,12 +605,12 @@ def generate_plan(current_user):
                 weekly_ded = lp['weekly_ded']
             lp['remaining_balance'] += weekly_ded
 
-            # Payment if any due_date falls within this week
+            # Payment if any due_date falls within this week (use per-installment amount)
             payment = 0.0
             is_pay_week = 0
-            for d in lp['due_dates']:
+            for idx, d in enumerate(lp['due_dates']):
                 if week_start.date() <= d <= week_end.date() and lp['paid_count'] < l['term_months']:
-                    payment += lp['monthly']
+                    payment += lp['amounts'][idx] if idx < len(lp['amounts']) else 0
                     lp['paid_count'] += 1
                     is_pay_week = 1
             lp['remaining_balance'] -= payment
@@ -567,9 +644,10 @@ def generate_plan(current_user):
         "message": "Plan generated",
         "weeks": total_weeks,
         "loans_count": len(loans),
-        "loans": [{"id": l['id'], "name": l['name'],
-                   "monthly_payment": round(calc_monthly_payment(l['principal'], l['interest_rate'], l['term_months']))}
-                  for l in loans]
+        "loans": [{"id": lp['loan']['id'], "name": lp['loan']['name'],
+                   "schedule": [round(x) for x in lp['amounts']],
+                   "total_payable": round(lp['total_payable'])}
+                  for lp in loan_params]
     })
 
 @app.route('/api/cashflows/<int:rid>/breakdown', methods=['GET'])

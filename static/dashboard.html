@@ -171,6 +171,24 @@ tbody tr:hover{background:rgba(59,130,246,.06)}
      </select></div>
     <div class="fg" style="margin-bottom:0"><label class="fl">Màu</label><input type="color" id="loan_color" class="fc" value="#2962ff" style="height:36px;padding:2px"></div>
    </div>
+   <div class="fg"><label class="fl">Cách tính tiền/tháng</label>
+    <select id="loan_mode" class="fc" style="appearance:auto" onchange="onModeChange()">
+     <option value="emi">EMI theo lãi suất %</option>
+     <option value="fixed_total">Tổng lãi ưu đãi (chia đều)</option>
+     <option value="custom_schedule">Lịch riêng từng kỳ (mỗi tháng khác nhau)</option>
+    </select></div>
+   <div id="modeFixedTotal" style="display:none" class="fg">
+    <label class="fl">Tổng lãi ưu đãi (đ)</label>
+    <input type="number" id="loan_total_interest" class="fc" placeholder="VD: 168047">
+   </div>
+   <div id="modeSchedule" style="display:none">
+    <label class="fl" style="display:block;margin-bottom:6px">Số tiền từng kỳ <span id="schedSumLabel" style="color:var(--muted);font-weight:400"></span></label>
+    <div id="schedRows" style="display:grid;gap:6px;max-height:180px;overflow-y:auto;padding-right:4px"></div>
+   </div>
+   <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);margin:8px 0;cursor:pointer">
+    <input type="checkbox" id="loan_no_early">
+    <span>Bên cho vay <strong style="color:var(--warn)">không cho phép tất toán sớm</strong></span>
+   </label>
    <div id="loanPreview" style="background:var(--inp);border:1px solid var(--bdr);border-radius:8px;padding:10px;font-size:11px;color:var(--muted);margin:8px 0"></div>
    <button type="submit" class="btn">Lưu</button>
    <button type="button" class="btn btn-warn" id="loanDeleteBtn" onclick="deleteLoan()" style="display:none;margin-top:6px">Xóa khoản vay này</button>
@@ -427,10 +445,15 @@ function renderLoans(){
   card.style.borderLeftColor=l.color;
   card.onclick=()=>openLoanModal(l);
   const purposeIcon=l.purpose==='refinance'?'🔄 ':'';
+  const modeLabel={emi:`${l.interest_rate}%/tháng`,fixed_total:`Lãi cố định ${fmt(l.total_interest||0)}`,custom_schedule:'Lịch riêng từng kỳ'}[l.payment_mode||'emi']||'';
+  const sched=l.schedule||[];
+  const minMax=sched.length?(()=>{const mn=Math.min(...sched),mx=Math.max(...sched);return mn===mx?fmt(mn):`${fmt(mn)}–${fmt(mx)}`;})():fmt(l.monthly_payment);
+  const noEarly=l.allow_early_payoff===0?'<span title="Không cho tất toán sớm" style="color:var(--warn);margin-left:4px">🔒</span>':'';
   card.innerHTML=`
-   <div class="lc-name">${purposeIcon}${l.name}<span class="lc-status" style="${closed?'background:rgba(120,123,134,.15);color:var(--muted)':''}">${closed?'Đã đóng':'Đang trả'}</span></div>
-   <div class="lc-meta">${fmt(l.principal)} • ${l.interest_rate}%/tháng • ${l.term_months} tháng</div>
-   <div class="lc-meta">Đóng ngày ${l.payment_day} • <strong style="color:var(--warn)">${fmt(l.monthly_payment)}/tháng</strong>${l.lender?' • '+l.lender:''}</div>
+   <div class="lc-name">${purposeIcon}${l.name}${noEarly}<span class="lc-status" style="${closed?'background:rgba(120,123,134,.15);color:var(--muted)':''}">${closed?'Đã đóng':'Đang trả'}</span></div>
+   <div class="lc-meta">${fmt(l.principal)} • ${modeLabel} • ${l.term_months} tháng</div>
+   <div class="lc-meta">Đóng ngày ${l.payment_day} • <strong style="color:var(--warn)">${minMax}/tháng</strong>${l.lender?' • '+l.lender:''}</div>
+   <div class="lc-meta" style="font-size:9px">Tổng phải trả: <strong style="color:var(--err)">${fmt(l.total_payable||0)}</strong></div>
    <div class="lc-bar"><div class="lc-bar-fill" style="width:${pct}%;background:${l.color}"></div></div>`;
   el.appendChild(card);
  });
@@ -450,10 +473,52 @@ function openLoanModal(loan){
  document.getElementById('loan_lender').value=isEdit?(loan.lender||''):'';
  document.getElementById('loan_purpose').value=isEdit?loan.purpose:'purchase';
  document.getElementById('loan_color').value=isEdit?loan.color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+ document.getElementById('loan_mode').value=isEdit?(loan.payment_mode||'emi'):'emi';
+ document.getElementById('loan_total_interest').value=isEdit?(loan.total_interest||''):'';
+ document.getElementById('loan_no_early').checked=isEdit?(loan.allow_early_payoff===0):false;
  document.getElementById('loanDeleteBtn').style.display=isEdit?'block':'none';
+ onModeChange(isEdit?loan.schedule:null);
  updateLoanPreview();
  if(window.lucide) lucide.createIcons();
 }
+
+function onModeChange(presetSchedule){
+ const mode=document.getElementById('loan_mode').value;
+ document.getElementById('modeFixedTotal').style.display=mode==='fixed_total'?'block':'none';
+ document.getElementById('modeSchedule').style.display=mode==='custom_schedule'?'block':'none';
+ if(mode==='custom_schedule')renderScheduleRows(presetSchedule);
+ updateLoanPreview();
+}
+
+function renderScheduleRows(preset){
+ const n=+document.getElementById('loan_term').value||3;
+ const wrap=document.getElementById('schedRows');wrap.innerHTML='';
+ const principal=+document.getElementById('loan_principal').value||0;
+ for(let i=1;i<=n;i++){
+  const row=document.createElement('div');
+  row.style.cssText='display:grid;grid-template-columns:60px 1fr;gap:8px;align-items:center';
+  const val=preset&&preset[i-1]?preset[i-1]:'';
+  row.innerHTML=`<span style="font-size:11px;color:var(--muted)">Kỳ ${i}</span><input type="number" class="fc sched-amt" data-idx="${i-1}" value="${val}" placeholder="${i===1?'VD: 944622':''}" oninput="updateSchedSum()">`;
+  wrap.appendChild(row);
+ }
+ updateSchedSum();
+}
+
+function updateSchedSum(){
+ const principal=+document.getElementById('loan_principal').value||0;
+ const inputs=document.querySelectorAll('#schedRows .sched-amt');
+ let sum=0;inputs.forEach(i=>{sum+=+i.value||0});
+ const interest=sum-principal;
+ const lbl=document.getElementById('schedSumLabel');
+ if(!sum){lbl.textContent='';return;}
+ lbl.innerHTML=`(Tổng: <strong>${fmt(sum)}</strong> = gốc ${fmt(principal)} + lãi ${fmt(interest)})`;
+ lbl.style.color=interest>=0?'var(--ok)':'var(--err)';
+ updateLoanPreview();
+}
+
+document.getElementById('loan_term').addEventListener('change',()=>{
+ if(document.getElementById('loan_mode').value==='custom_schedule')renderScheduleRows();
+});
 function closeLoanModal(){document.getElementById('loanModal').classList.remove('open');}
 
 function calcMonthly(p,r,n){if(n<=0)return 0;if(r>0){const x=r/100;return p*x*Math.pow(1+x,n)/(Math.pow(1+x,n)-1);}return p/n;}
@@ -463,11 +528,27 @@ function updateLoanPreview(){
  const n=+document.getElementById('loan_term').value||3;
  const sd=document.getElementById('loan_start').value;
  const pd=+document.getElementById('loan_payday').value||1;
+ const mode=document.getElementById('loan_mode').value;
  if(!p||!sd){document.getElementById('loanPreview').textContent='Nhập đủ thông tin để xem trước.';return;}
- const m=calcMonthly(p,r,n);const total=m*n;
+ let amounts=[],total=0,desc='';
+ if(mode==='emi'){
+  const m=calcMonthly(p,r,n);amounts=Array(n).fill(m);total=m*n;
+  desc=`💰 Trả mỗi tháng: <strong style="color:var(--warn)">${fmt(m)}</strong> (đều) (ngày ${pd})`;
+ }else if(mode==='fixed_total'){
+  const ti=+document.getElementById('loan_total_interest').value||0;
+  const m=(p+ti)/n;amounts=Array(n).fill(m);total=p+ti;
+  desc=`💰 Trả mỗi tháng: <strong style="color:var(--warn)">${fmt(m)}</strong> (lãi ưu đãi ${fmt(ti)}) (ngày ${pd})`;
+ }else{
+  document.querySelectorAll('#schedRows .sched-amt').forEach(i=>{const v=+i.value||0;amounts.push(v);total+=v});
+  if(amounts.length){
+   const min=Math.min(...amounts.filter(x=>x>0)||[0]),max=Math.max(...amounts);
+   desc=`💰 Trả từng kỳ khác nhau: <strong style="color:var(--warn)">${fmt(min)} → ${fmt(max)}</strong> (ngày ${pd})`;
+  }else desc='Nhập số tiền cho từng kỳ.';
+ }
  const start=new Date(sd);const end=new Date(start);end.setMonth(end.getMonth()+n);
- const fmtD=d=>d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',yyyy:'numeric'});
- document.getElementById('loanPreview').innerHTML=`💰 Trả mỗi tháng: <strong style="color:var(--warn)">${fmt(m)}</strong> (vào ngày ${pd} hàng tháng)<br>📅 Từ ${start.toLocaleDateString('vi-VN')} → ${end.toLocaleDateString('vi-VN')}<br>📊 Tổng phải trả: <strong style="color:var(--err)">${fmt(total)}</strong> (lãi: ${fmt(total-p)})`;
+ const interest=total-p;
+ const noEarly=document.getElementById('loan_no_early').checked;
+ document.getElementById('loanPreview').innerHTML=`${desc}<br>📅 Từ ${start.toLocaleDateString('vi-VN')} → ${end.toLocaleDateString('vi-VN')}<br>📊 Tổng phải trả: <strong style="color:var(--err)">${fmt(total)}</strong> (lãi: ${fmt(interest)})${noEarly?'<br>⚠️ <span style="color:var(--warn)">Không được tất toán sớm</span>':''}`;
 }
 ['loan_principal','loan_rate','loan_term','loan_start','loan_payday'].forEach(id=>{
  document.addEventListener('input',e=>{if(e.target.id===id)updateLoanPreview();});
@@ -476,22 +557,41 @@ function updateLoanPreview(){
 document.getElementById('loanForm').addEventListener('submit',async e=>{
  e.preventDefault();
  const id=document.getElementById('loan_id').value;
+ const mode=document.getElementById('loan_mode').value;
+ const term=+document.getElementById('loan_term').value;
+ const principal=+document.getElementById('loan_principal').value;
+ let schedule=[];
+ if(mode==='custom_schedule'){
+  document.querySelectorAll('#schedRows .sched-amt').forEach(i=>schedule.push(+i.value||0));
+  if(schedule.some(x=>x<=0)){alert('Vui lòng nhập đủ số tiền cho tất cả các kỳ.');return;}
+  const sum=schedule.reduce((a,b)=>a+b,0);
+  if(sum<principal){if(!confirm(`Tổng các kỳ (${fmt(sum)}) nhỏ hơn gốc (${fmt(principal)}). Vẫn lưu?`))return;}
+ }
  const body={
   name:document.getElementById('loan_name').value,
-  principal:+document.getElementById('loan_principal').value,
+  principal:principal,
   interest_rate:+document.getElementById('loan_rate').value,
-  term_months:+document.getElementById('loan_term').value,
+  term_months:term,
   start_date:document.getElementById('loan_start').value,
   payment_day:+document.getElementById('loan_payday').value,
   lender:document.getElementById('loan_lender').value,
   purpose:document.getElementById('loan_purpose').value,
   color:document.getElementById('loan_color').value,
+  payment_mode:mode,
+  total_interest:+document.getElementById('loan_total_interest').value||0,
+  allow_early_payoff:document.getElementById('loan_no_early').checked?0:1,
+  schedule:schedule,
  };
  const url='/api/loans'+(id?'/'+id:'');
  const method=id?'PUT':'POST';
  const r=await fetch(url,{method,headers:H,body:JSON.stringify(body)});
  if(r.ok){closeLoanModal();loadLoans();}
  else{const e=await r.json();alert(e.detail||'Lỗi');}
+});
+
+['loan_total_interest','loan_no_early'].forEach(id=>{
+ document.addEventListener('input',e=>{if(e.target.id===id)updateLoanPreview();});
+ document.addEventListener('change',e=>{if(e.target.id===id)updateLoanPreview();});
 });
 
 async function deleteLoan(){
