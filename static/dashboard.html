@@ -379,9 +379,59 @@ async function toggleBreakdown(cfid,btn){
  const items=await r.json();
  const newTr=document.createElement('tr');newTr.className='breakdown-row';
  const colspan=tr.children.length;
- const inner=items.length?`<table style="width:100%"><thead><tr><th style="text-align:left">Khoản vay</th><th>Trích tuần</th><th>Trả góp</th><th>Dư nợ</th></tr></thead><tbody>${items.map(i=>`<tr><td style="text-align:left;color:#fff"><span class="lp-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${i.loan_color};margin-right:6px"></span>${i.loan_name}${i.lender?' <span style=\"color:var(--muted);font-size:10px\">('+i.lender+')</span>':''}</td><td style="text-align:right">${fmt(i.weekly_deduction)}</td><td style="text-align:right;color:${i.payment>0?'var(--warn)':'var(--muted)'}">${i.payment>0?fmt(i.payment):'—'}</td><td style="text-align:right;color:var(--err)">${fmt(i.debt_balance)}</td></tr>`).join('')}</tbody></table>`:'<div style="color:var(--muted);padding:6px">Không có khoản vay nào active trong tuần này.</div>';
+ let inner;
+ if(!items.length){
+  inner='<div style="color:var(--muted);padding:6px">Không có khoản vay nào active trong tuần này.</div>';
+ }else{
+  inner=`<table style="width:100%"><thead><tr><th style="text-align:left">Khoản vay</th><th>Trích tuần</th><th>Trả góp (kỳ)</th><th>Dư nợ</th></tr></thead><tbody>`;
+  items.forEach(i=>{
+   const editable=i.payment>0&&i.installment_no>0;
+   const payCell=editable
+    ?`<span class="inst-pay" data-loan="${i.loan_id}" data-inst="${i.installment_no}" data-cfid="${cfid}" data-amt="${i.payment}" style="color:var(--warn);cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Click để sửa kỳ ${i.installment_no}">${fmt(i.payment)} <span style="color:var(--muted);font-size:10px">(kỳ ${i.installment_no})</span> ✏️</span>`
+    :(i.payment>0?fmt(i.payment):'<span style="color:var(--muted)">—</span>');
+   inner+=`<tr><td style="text-align:left;color:#fff"><span class="lp-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${i.loan_color};margin-right:6px"></span>${i.loan_name}${i.lender?' <span style="color:var(--muted);font-size:10px">('+i.lender+')</span>':''}</td><td style="text-align:right">${fmt(i.weekly_deduction)}</td><td style="text-align:right">${payCell}</td><td style="text-align:right;color:var(--err)">${fmt(i.debt_balance)}</td></tr>`;
+  });
+  inner+='</tbody></table>';
+ }
  newTr.innerHTML=`<td colspan="${colspan}"><div class="breakdown-inner">${inner}</div></td>`;
  tr.after(newTr);
+ // Wire up inline edit
+ newTr.querySelectorAll('.inst-pay').forEach(el=>{
+  el.addEventListener('click',()=>startInstEdit(el));
+ });
+}
+
+function startInstEdit(span){
+ const cur=+span.dataset.amt;
+ const loanId=span.dataset.loan;
+ const inst=span.dataset.inst;
+ const cfid=span.dataset.cfid;
+ const inp=document.createElement('input');
+ inp.type='number';inp.value=cur;inp.className='ei';inp.style.width='110px';
+ const save=async ()=>{
+  const v=+inp.value||0;
+  if(v===cur){span.replaceWith(rebuildInstSpan(loanId,inst,cfid,cur));return;}
+  inp.disabled=true;
+  const r=await fetch(`/api/loans/${loanId}/installment/${inst}`,{method:'PUT',headers:H,body:JSON.stringify({amount:v})});
+  if(!r.ok){alert('Lỗi khi cập nhật');inp.disabled=false;return;}
+  // Regenerate plan to recompute everything
+  await fetch('/api/generate_plan',{method:'POST',headers:H,body:JSON.stringify({weekly_income:+document.getElementById('s_income').value,fixed_cost:+document.getElementById('s_cost').value,init_reserve:+document.getElementById('s_reserve').value,skip_legacy:1})});
+  await load();
+ };
+ inp.addEventListener('keydown',e=>{if(e.key==='Enter')save();else if(e.key==='Escape')span.replaceWith(rebuildInstSpan(loanId,inst,cfid,cur));});
+ inp.addEventListener('blur',save);
+ span.replaceWith(inp);inp.focus();inp.select();
+}
+
+function rebuildInstSpan(loanId,inst,cfid,amt){
+ const s=document.createElement('span');
+ s.className='inst-pay';
+ s.dataset.loan=loanId;s.dataset.inst=inst;s.dataset.cfid=cfid;s.dataset.amt=amt;
+ s.style.cssText='color:var(--warn);cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px';
+ s.title=`Click để sửa kỳ ${inst}`;
+ s.innerHTML=`${fmt(amt)} <span style="color:var(--muted);font-size:10px">(kỳ ${inst})</span> ✏️`;
+ s.addEventListener('click',()=>startInstEdit(s));
+ return s;
 }
 
 function startE(id){editId=id;rTbl();}

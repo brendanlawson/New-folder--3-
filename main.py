@@ -76,8 +76,12 @@ def init_db():
         payment REAL DEFAULT 0,
         debt_balance REAL DEFAULT 0,
         is_payment_week INTEGER DEFAULT 0,
+        installment_no INTEGER DEFAULT 0,
         FOREIGN KEY (cashflow_id) REFERENCES cashflows(id) ON DELETE CASCADE,
         FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE)""")
+    item_cols = {r[1] for r in c.execute("PRAGMA table_info(cashflow_loan_items)").fetchall()}
+    if 'installment_no' not in item_cols:
+        c.execute("ALTER TABLE cashflow_loan_items ADD COLUMN installment_no INTEGER DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -415,6 +419,43 @@ def delete_loan(current_user, lid):
     conn.close()
     return jsonify({"message": "Loan deleted"})
 
+@app.route('/api/loans/<int:lid>/installment/<int:k>', methods=['PUT'])
+@require_auth
+def update_installment(current_user, lid, k):
+    """Update a single installment amount. Auto-switches loan to custom_schedule mode."""
+    data = request.json
+    new_amount = float(data.get('amount', 0))
+    conn = get_db()
+    loan = conn.execute("SELECT * FROM loans WHERE id=? AND user_id=?",
+                        (lid, current_user['id'])).fetchone()
+    if not loan:
+        conn.close()
+        return jsonify({"detail": "Loan not found"}), 404
+    n = loan['term_months']
+    if k < 1 or k > n:
+        conn.close()
+        return jsonify({"detail": "Invalid installment number"}), 400
+    c = conn.cursor()
+    # If not yet in custom mode, snapshot current schedule into rows then switch
+    if loan['payment_mode'] != 'custom_schedule':
+        amounts = loan_schedule_amounts(conn, loan)
+        c.execute("DELETE FROM loan_schedule WHERE loan_id=?", (lid,))
+        for i, amt in enumerate(amounts, start=1):
+            c.execute("INSERT INTO loan_schedule (loan_id, installment_no, amount) VALUES (?,?,?)",
+                      (lid, i, float(amt)))
+        c.execute("UPDATE loans SET payment_mode='custom_schedule' WHERE id=?", (lid,))
+    # Upsert the requested installment
+    existing = c.execute("SELECT id FROM loan_schedule WHERE loan_id=? AND installment_no=?",
+                         (lid, k)).fetchone()
+    if existing:
+        c.execute("UPDATE loan_schedule SET amount=? WHERE id=?", (new_amount, existing['id']))
+    else:
+        c.execute("INSERT INTO loan_schedule (loan_id, installment_no, amount) VALUES (?,?,?)",
+                  (lid, k, new_amount))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Installment updated", "amount": new_amount})
+
 # --- UPCOMING PAYMENTS / CALENDAR ---
 @app.route('/api/loans/upcoming', methods=['GET'])
 @require_auth
@@ -613,17 +654,19 @@ def generate_plan(current_user):
             # Payment if any due_date falls within this week (use per-installment amount)
             payment = 0.0
             is_pay_week = 0
+            installment_no = 0
             for idx, d in enumerate(lp['due_dates']):
                 if week_start.date() <= d <= week_end.date() and lp['paid_count'] < l['term_months']:
                     payment += lp['amounts'][idx] if idx < len(lp['amounts']) else 0
                     lp['paid_count'] += 1
                     is_pay_week = 1
+                    installment_no = lp['paid_count']  # 1-based
             lp['remaining_balance'] -= payment
 
             sum_ded += weekly_ded
             sum_payment += payment
             sum_debt += lp['remaining_balance']
-            items.append((l['id'], weekly_ded, payment, lp['remaining_balance'], is_pay_week))
+            items.append((l['id'], weekly_ded, payment, lp['remaining_balance'], is_pay_week, installment_no))
 
         # Spending and reserve logic (same as before, but using sum)
         spending_raw = weekly_income - fixed_cost - sum_ded
@@ -638,9 +681,9 @@ def generate_plan(current_user):
             (current_user['id'], f'Tuần {w}', week_date_str, weekly_income, fixed_cost,
              sum_ded, res_withdrawal, spending, sum_payment, new_res, sum_debt))
         cashflow_id = c.lastrowid
-        for (loan_id, wd, pay, bal, ipw) in items:
-            c.execute("""INSERT INTO cashflow_loan_items (cashflow_id, loan_id, weekly_deduction, payment, debt_balance, is_payment_week)
-                         VALUES (?,?,?,?,?,?)""", (cashflow_id, loan_id, wd, pay, bal, ipw))
+        for (loan_id, wd, pay, bal, ipw, inst) in items:
+            c.execute("""INSERT INTO cashflow_loan_items (cashflow_id, loan_id, weekly_deduction, payment, debt_balance, is_payment_week, installment_no)
+                         VALUES (?,?,?,?,?,?,?)""", (cashflow_id, loan_id, wd, pay, bal, ipw, inst))
         prev_res = new_res
 
     conn.commit()
